@@ -4,11 +4,27 @@ from __future__ import annotations
 
 import re
 import struct
+import time
 import zipfile
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
-from maya.static.binary_xml import XmlNode, parse_binary_xml, parse_string_pool
+from maya.static.binary_xml import XmlNode, iter_string_pool, parse_binary_xml
+from maya.static.limits import (
+    MAX_ARSC_BYTES,
+    MAX_COMPRESSION_RATIO,
+    MAX_DEX_BYTES,
+    MAX_DEX_FILES,
+    MAX_DEX_STRING_BYTES,
+    MAX_DEX_STRINGS,
+    MAX_MANIFEST_BYTES,
+    MAX_TOTAL_BYTES,
+    MAX_XML_BYTES,
+    MAX_XML_FILES,
+    MAX_ZIP_ENTRIES,
+    SCAN_DEADLINE_SECONDS,
+    ScanLimitError,
+)
 
 _URL_RE = re.compile(r"https?://[^\s\"'<>]{4,200}")
 _API_RE = re.compile(r"^/(?:api|rest|graphql)(?:/[A-Za-z0-9_.{}\-]{1,48}){1,8}$")
@@ -25,7 +41,6 @@ _IGNORED_HOSTS = {
     "example.com",
     "www.example.com",
 }
-_MAX_STRING = 300
 
 
 @dataclass
@@ -79,15 +94,56 @@ def load_apk(path: str) -> ApkFacts:
         raise ValueError(f"not a zip APK: {path}") from exc
     with archive:
         names = archive.namelist()
+        if len(names) > MAX_ZIP_ENTRIES:
+            raise ScanLimitError(f"APK has {len(names)} entries; the scan budget is {MAX_ZIP_ENTRIES}")
         if "AndroidManifest.xml" not in names:
             raise ValueError("APK has no AndroidManifest.xml")
-        manifest = parse_binary_xml(archive.read("AndroidManifest.xml"))
+        session = _ScanSession()
+        manifest_bytes = session.read(archive, "AndroidManifest.xml", MAX_MANIFEST_BYTES)
+        manifest = parse_binary_xml(manifest_bytes, deadline=session.deadline)
         if manifest is None or manifest.name != "manifest":
             raise ValueError("AndroidManifest.xml has no manifest root")
-        network = _network_security(archive, names)
-        strings = _collect_strings(archive, names)
-    urls, api_paths = _interesting_strings(strings)
+        network = _network_security(archive, names, session)
+        urls, api_paths = _collect_strings(archive, names, session)
     return _facts_from_manifest(manifest, network, urls, api_paths, _native_libraries(names))
+
+
+class _ScanSession:
+    """Tracks uncompressed bytes and wall time for one APK read."""
+
+    def __init__(self) -> None:
+        self.deadline = time.monotonic() + SCAN_DEADLINE_SECONDS
+        self._used = 0
+
+    def read(self, archive: zipfile.ZipFile, name: str, cap: int) -> bytes:
+        self._check_time()
+        info = archive.getinfo(name)
+        reason = _entry_too_large(info, cap)
+        if reason:
+            raise ScanLimitError(reason)
+        self._used += info.file_size
+        if self._used > MAX_TOTAL_BYTES:
+            raise ScanLimitError(f"APK entries expand past the {MAX_TOTAL_BYTES} byte scan budget")
+        with archive.open(info, "r") as handle:
+            payload = handle.read(cap + 1)
+        if len(payload) > cap:
+            raise ScanLimitError(f"{name} expanded past the {cap} byte cap")
+        return payload
+
+    def _check_time(self) -> None:
+        if time.monotonic() > self.deadline:
+            raise ScanLimitError("static scan exceeded the time budget")
+
+
+def _entry_too_large(info: zipfile.ZipInfo, cap: int) -> str | None:
+    """Reject a declared size or compression ratio before zlib inflates the entry."""
+    if info.file_size > cap:
+        return f"{info.filename} uncompressed size {info.file_size} exceeds {cap} bytes"
+    if info.compress_type != zipfile.ZIP_STORED:
+        ratio = info.file_size / max(info.compress_size, 1)
+        if ratio > MAX_COMPRESSION_RATIO:
+            return f"{info.filename} compression ratio {ratio:.0f} exceeds {MAX_COMPRESSION_RATIO}"
+    return None
 
 
 def _facts_from_manifest(
@@ -182,17 +238,20 @@ def _intent_filter(node: XmlNode) -> IntentFilter:
     return parsed
 
 
-def _network_security(archive: zipfile.ZipFile, names: list[str]) -> NetworkSecurity:
+def _network_security(archive: zipfile.ZipFile, names: list[str], session: _ScanSession) -> NetworkSecurity:
     summary = NetworkSecurity()
-    for name in names:
-        if not name.startswith("res/xml/") or not name.endswith(".xml"):
-            continue
-        payload = archive.read(name)
+    xml_names = [name for name in names if name.startswith("res/xml/") and name.endswith(".xml")]
+    if len(xml_names) > MAX_XML_FILES:
+        raise ScanLimitError(f"APK has {len(xml_names)} res/xml files; the scan budget is {MAX_XML_FILES}")
+    for name in xml_names:
+        payload = session.read(archive, name, MAX_XML_BYTES)
         if len(payload) < 8 or struct.unpack_from("<H", payload, 0)[0] != 0x0003:
             continue
         try:
-            root = parse_binary_xml(payload)
-        except ValueError:
+            root = parse_binary_xml(payload, deadline=session.deadline)
+        except ValueError as exc:
+            if isinstance(exc, ScanLimitError):
+                raise
             continue
         if root is None or root.name != "network-security-config":
             continue
@@ -215,51 +274,78 @@ def _walk_network_security(node: XmlNode, summary: NetworkSecurity) -> None:
         _walk_network_security(child, summary)
 
 
-def _collect_strings(archive: zipfile.ZipFile, names: list[str]) -> list[str]:
-    collected: list[str] = []
+def _collect_strings(archive: zipfile.ZipFile, names: list[str], session: _ScanSession) -> tuple[list[str], list[str]]:
+    urls: list[str] = []
+    api_paths: list[str] = []
+    seen_urls: set[str] = set()
+    seen_paths: set[str] = set()
+
+    def keep(raw: str) -> None:
+        if not raw or len(raw) > MAX_DEX_STRING_BYTES:
+            return
+        if _API_RE.match(raw) and raw not in seen_paths:
+            seen_paths.add(raw)
+            api_paths.append(raw)
+        for match in _URL_RE.findall(raw):
+            url = match.rstrip(").,;\"'")
+            if url in seen_urls or _ignored_url(url):
+                continue
+            seen_urls.add(url)
+            urls.append(url)
+
     if "resources.arsc" in names:
-        collected.extend(_resource_strings(archive.read("resources.arsc")))
-    for name in names:
-        if name == "classes.dex" or (name.startswith("classes") and name.endswith(".dex")):
-            collected.extend(_dex_strings(archive.read(name)))
-    return collected
+        payload = session.read(archive, "resources.arsc", MAX_ARSC_BYTES)
+        for raw in _resource_strings(payload, session.deadline):
+            keep(raw)
+    dex_names = [
+        name for name in names if name == "classes.dex" or (name.startswith("classes") and name.endswith(".dex"))
+    ]
+    if len(dex_names) > MAX_DEX_FILES:
+        raise ScanLimitError(f"APK has {len(dex_names)} dex files; the scan budget is {MAX_DEX_FILES}")
+    for name in dex_names:
+        for raw in _dex_strings(session.read(archive, name, MAX_DEX_BYTES), session.deadline):
+            keep(raw)
+    return urls, api_paths
 
 
-def _resource_strings(data: bytes) -> list[str]:
+def _resource_strings(data: bytes, deadline: float):
     if len(data) < 12:
-        return []
+        return
     chunk_type, header_size, _chunk_size = struct.unpack_from("<HHI", data, 0)
     if chunk_type != 0x0002 or header_size < 12 or header_size + 8 > len(data):
-        return []
+        return
     pool_type = struct.unpack_from("<H", data, header_size)[0]
     if pool_type != 0x0001:
-        return []
-    try:
-        return parse_string_pool(data, header_size)
-    except ValueError:
-        return []
+        return
+    yield from iter_string_pool(data, header_size, deadline=deadline)
 
 
-def _dex_strings(data: bytes) -> list[str]:
+def _dex_strings(data: bytes, deadline: float):
     if len(data) < 112 or not data.startswith(b"dex\n"):
-        return []
+        return
     count = struct.unpack_from("<I", data, 56)[0]
+    if count > MAX_DEX_STRINGS:
+        raise ScanLimitError(f"dex string count {count} exceeds {MAX_DEX_STRINGS}")
     offset = struct.unpack_from("<I", data, 60)[0]
-    strings: list[str] = []
     for index in range(count):
+        if index % 4096 == 0 and time.monotonic() > deadline:
+            raise ScanLimitError("static scan exceeded the time budget")
         entry = offset + index * 4
         if entry + 4 > len(data):
             break
         string_at = struct.unpack_from("<I", data, entry)[0]
+        if string_at >= len(data):
+            continue
         try:
             _utf16_len, cursor = _uleb128(data, string_at)
         except ValueError:
             continue
-        end = data.find(b"\x00", cursor)
+        if cursor >= len(data):
+            continue
+        end = data.find(b"\x00", cursor, cursor + MAX_DEX_STRING_BYTES + 1)
         if end == -1:
             continue
-        strings.append(data[cursor:end].decode("utf-8", "replace"))
-    return strings
+        yield data[cursor:end].decode("utf-8", "replace")
 
 
 def _uleb128(data: bytes, offset: int) -> tuple[int, int]:
@@ -273,26 +359,6 @@ def _uleb128(data: bytes, offset: int) -> tuple[int, int]:
             return result, offset
         shift += 7
     raise ValueError("bad uleb128")
-
-
-def _interesting_strings(strings: list[str]) -> tuple[list[str], list[str]]:
-    urls: list[str] = []
-    api_paths: list[str] = []
-    seen_urls: set[str] = set()
-    seen_paths: set[str] = set()
-    for raw in strings:
-        if not raw or len(raw) > _MAX_STRING:
-            continue
-        if _API_RE.match(raw) and raw not in seen_paths:
-            seen_paths.add(raw)
-            api_paths.append(raw)
-        for match in _URL_RE.findall(raw):
-            url = match.rstrip(").,;\"'")
-            if url in seen_urls or _ignored_url(url):
-                continue
-            seen_urls.add(url)
-            urls.append(url)
-    return urls, api_paths
 
 
 def _ignored_url(url: str) -> bool:

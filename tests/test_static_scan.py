@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import struct
+import time
 import zipfile
 from pathlib import Path
 
@@ -10,7 +12,9 @@ from click.testing import CliRunner
 import maya.tools  # noqa: F401
 from maya.agents.state import AgentState
 from maya.main import cli
-from maya.static.apk import ApkFacts, Component, IntentFilter, NetworkSecurity
+from maya.static.apk import ApkFacts, Component, IntentFilter, NetworkSecurity, _dex_strings, _entry_too_large
+from maya.static.binary_xml import parse_string_pool
+from maya.static.limits import MAX_DEX_BYTES, ScanLimitError
 from maya.static.rules import build_findings
 from maya.static.scan import run_static_scan
 from maya.telemetry.tracer import Tracer
@@ -153,6 +157,53 @@ def test_static_apk_scan_runs_on_the_host_in_strict_mode() -> None:
     assert result.get("status") == "ok"
     assert result["package"] == "com.app.damnvulnerablebank"
     assert "sandbox" not in str(result.get("error", "")).lower()
+
+
+def test_static_scan_rejects_a_high_ratio_entry(tmp_path: Path) -> None:
+    archive_path = tmp_path / "bomb.apk"
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("AndroidManifest.xml", b"\x00" * (256 * 1024))
+    started = time.monotonic()
+    result = run_static_scan(str(archive_path))
+    elapsed = time.monotonic() - started
+    assert elapsed < 2
+    assert result["status"] == "error"
+    assert "ratio" in result["error"]
+
+
+def test_declared_uncompressed_size_is_rejected_before_inflate() -> None:
+    info = zipfile.ZipInfo("classes.dex")
+    info.file_size = 2 * 1024 * 1024 * 1024
+    info.compress_size = 64
+    info.compress_type = zipfile.ZIP_DEFLATED
+    reason = _entry_too_large(info, MAX_DEX_BYTES)
+    assert reason is not None
+    assert "uncompressed size" in reason
+
+
+def test_string_pool_rejects_an_absurd_count() -> None:
+    buf = bytearray(32)
+    struct.pack_into("<HHI", buf, 0, 1, 28, 32)
+    struct.pack_into("<I", buf, 8, 10_000_000)
+    try:
+        parse_string_pool(bytes(buf), 0)
+    except ScanLimitError as exc:
+        assert "string pool count" in str(exc)
+    else:
+        raise AssertionError("expected ScanLimitError")
+
+
+def test_dex_string_count_is_capped() -> None:
+    data = bytearray(112)
+    data[0:8] = b"dex\n035\x00"
+    struct.pack_into("<I", data, 56, 10_000_000)
+    struct.pack_into("<I", data, 60, 112)
+    try:
+        list(_dex_strings(bytes(data), time.monotonic() + 5))
+    except ScanLimitError as exc:
+        assert "dex string count" in str(exc)
+    else:
+        raise AssertionError("expected ScanLimitError")
 
 
 def test_cli_static_only_requires_an_apk(tmp_path: Path) -> None:

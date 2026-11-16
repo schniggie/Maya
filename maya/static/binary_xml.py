@@ -7,7 +7,10 @@ AndroidManifest and res/xml resources. It does not decompile resources.
 from __future__ import annotations
 
 import struct
+import time
 from dataclasses import dataclass, field
+
+from maya.static.limits import MAX_POOL_STRING_BYTES, MAX_POOL_STRINGS, ScanLimitError
 
 _RES_XML = 0x0003
 _STRING_POOL = 0x0001
@@ -29,7 +32,7 @@ class XmlNode:
     children: list[XmlNode] = field(default_factory=list)
 
 
-def parse_binary_xml(data: bytes) -> XmlNode | None:
+def parse_binary_xml(data: bytes, *, deadline: float | None = None) -> XmlNode | None:
     """Parse an Android binary XML document into a tree."""
     if len(data) < 8:
         raise ValueError("binary XML is too short")
@@ -49,7 +52,7 @@ def parse_binary_xml(data: bytes) -> XmlNode | None:
         if chunk_size < 8 or pos + chunk_size > limit:
             break
         if chunk_type == _STRING_POOL and not strings:
-            strings = _parse_string_pool(data, pos)
+            strings = list(_iter_string_pool(data, pos, deadline=deadline, max_strings=50_000))
         elif chunk_type == _START_ELEMENT:
             node = _parse_start_element(data, pos, chunk_header_size, strings)
             if stack:
@@ -63,9 +66,14 @@ def parse_binary_xml(data: bytes) -> XmlNode | None:
     return root
 
 
-def parse_string_pool(data: bytes, offset: int) -> list[str]:
+def parse_string_pool(data: bytes, offset: int, *, deadline: float | None = None) -> list[str]:
     """Parse a ResStringPool chunk. Used for resources.arsc as well as XML."""
-    return _parse_string_pool(data, offset)
+    return list(iter_string_pool(data, offset, deadline=deadline))
+
+
+def iter_string_pool(data: bytes, offset: int, *, deadline: float | None = None, max_strings: int = MAX_POOL_STRINGS):
+    """Yield pool strings without retaining the whole pool."""
+    return _iter_string_pool(data, offset, deadline=deadline, max_strings=max_strings)
 
 
 def _chunk_header(data: bytes, offset: int) -> tuple[int, int, int]:
@@ -86,13 +94,15 @@ def _u32(data: bytes, offset: int) -> int:
     return struct.unpack_from("<I", data, offset)[0]
 
 
-def _parse_string_pool(data: bytes, offset: int) -> list[str]:
+def _iter_string_pool(data: bytes, offset: int, *, deadline: float | None, max_strings: int):
     chunk_type, header_size, chunk_size = _chunk_header(data, offset)
     if chunk_type != _STRING_POOL:
         raise ValueError("expected a string pool")
     if header_size < 28 or offset + chunk_size > len(data):
         raise ValueError("string pool header is invalid")
     string_count = _u32(data, offset + 8)
+    if string_count > max_strings:
+        raise ScanLimitError(f"string pool count {string_count} exceeds {max_strings}")
     flags = _u32(data, offset + 16)
     strings_start = _u32(data, offset + 20)
     utf8 = bool(flags & (1 << 8))
@@ -102,11 +112,11 @@ def _parse_string_pool(data: bytes, offset: int) -> list[str]:
     base = offset + strings_start
     if base > offset + chunk_size:
         raise ValueError("string pool data starts outside the chunk")
-    strings: list[str] = []
     for index in range(string_count):
+        if deadline is not None and index % 4096 == 0 and time.monotonic() > deadline:
+            raise ScanLimitError("static scan exceeded the time budget")
         rel = _u32(data, offsets_at + index * 4)
-        strings.append(_read_pool_string(data, base + rel, offset + chunk_size, utf8))
-    return strings
+        yield _read_pool_string(data, base + rel, offset + chunk_size, utf8)
 
 
 def _read_pool_string(data: bytes, pos: int, end: int, utf8: bool) -> str:
@@ -115,10 +125,12 @@ def _read_pool_string(data: bytes, pos: int, end: int, utf8: bool) -> str:
     if utf8:
         _, pos = _utf8_len(data, pos, end)
         byte_len, pos = _utf8_len(data, pos, end)
-        if pos + byte_len > len(data):
+        if byte_len > MAX_POOL_STRING_BYTES or pos + byte_len > len(data):
             return ""
         return data[pos : pos + byte_len].decode("utf-8", "replace")
     char_len, pos = _utf16_len(data, pos, end)
+    if char_len > MAX_POOL_STRING_BYTES // 2:
+        return ""
     byte_len = char_len * 2
     if pos + byte_len > len(data):
         return ""

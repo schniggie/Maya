@@ -81,7 +81,7 @@ def _is_headless() -> bool:
 @click.option("--skills", default="", hidden=True)
 @click.option("--default-skills", default="", hidden=True)
 @click.option("--agent-skill", "agent_skills", multiple=True, hidden=True)
-@click.option("--list-skills", "list_skills_flag", is_flag=True, default=False, hidden=True)
+@click.option("--list-skills", "list_skills_flag", is_flag=True, default=False, help="List available skills and exit")
 @click.option("--role", default="root", type=click.Choice(["root", "static", "dynamic", "api", "exploit"]), hidden=True)
 @click.option("--sandbox-mode", default="strict", type=click.Choice(["strict", "permissive"]), hidden=True)
 @click.option("--decision-timeout-seconds", default=30, type=int, hidden=True)

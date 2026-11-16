@@ -1,6 +1,12 @@
 # Ruff configuration
 target-version = "py310"
 line-length = 120
+extend-exclude = [
+  "maya/skills/**",
+  "assets/**",
+  "companion_app/**",
+  "docs/**",
+]
 
 [lint]
 select = [

@@ -22,8 +22,8 @@ Thank you for your interest in making Maya better! This guide covers everything 
 
 ```bash
 # Clone
-git clone https://github.com/USER/MOBSEC.git
-cd MOBSEC
+git clone https://github.com/schniggie/Maya.git
+cd Maya
 
 # Virtual environment
 python -m venv .venv
@@ -285,8 +285,11 @@ All tests go in `tests/`. Name them `test_<module>.py`.
 ### Running Tests
 
 ```bash
-# All tests (except device-gated)
-pytest -q -k "not integration"
+# Fast unit tests
+pytest -q -m "not integration and not smoke"
+
+# DVBA static smoke (requires apktool + ripgrep)
+pytest -q -m smoke
 
 # Specific file
 pytest tests/test_my_tool.py -v

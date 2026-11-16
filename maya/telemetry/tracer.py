@@ -34,6 +34,10 @@ class Tracer:
         (self.run_dir / "trace.json").write_text(json.dumps(self.events, indent=2), encoding="utf-8")
         (self.run_dir / "findings.json").write_text(json.dumps(self.findings, indent=2), encoding="utf-8")
         (self.run_dir / "api_endpoints.json").write_text(json.dumps(self.api_endpoints, indent=2), encoding="utf-8")
+        (self.run_dir / "report.json").write_text(
+            json.dumps({"findings": self.findings, "api_endpoints": self.api_endpoints}, indent=2),
+            encoding="utf-8",
+        )
         self._write_markdown_report()
         self._write_html_report()
 

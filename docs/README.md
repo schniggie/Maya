@@ -472,7 +472,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Development environment setup
 - Code conventions (tools return `dict`, never raise, use `@register_tool`)
 - How to add new tools, skills, and Frida scripts
-- PR review process (1 approval + passing CI + CodeQL)
+- PR review process (1 approval + passing CI)
 - Skill authoring guide
 
 **Quick links**: [Bug Report](https://github.com/schniggie/Maya/issues/new?template=bug_report.md) · [Feature Request](https://github.com/schniggie/Maya/issues/new?template=feature_request.md) · [Discussions](https://github.com/schniggie/Maya/discussions)

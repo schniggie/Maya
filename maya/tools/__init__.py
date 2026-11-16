@@ -17,6 +17,7 @@ from . import (
     reporting,  # noqa: F401
     shared_context,  # noqa: F401
     skills_runtime,  # noqa: F401
+    static_scan_tool,  # noqa: F401
     terminal,  # noqa: F401
     verification,  # noqa: F401
 )

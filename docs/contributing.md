@@ -316,8 +316,7 @@ pytest -q -m integration
 | Requirement | Description |
 |-------------|-------------|
 | **1 approving review** | From a maintainer |
-| **Passing CI** | Lint + tests + Docker build check |
-| **CodeQL clean** | No new security alerts |
+| **Passing CI** | Lint, tests, device-free DVBA static scan, Docker build check |
 | **No conflicts** | Rebase on latest `main` |
 
 ### Branch Naming

@@ -2,8 +2,8 @@
 name: static_analyzer
 description: Operational instructions for static analysis sub-agents
 category: agents
-version: "1.1"
-last_updated: "2026-03-26"
+version: "1.2"
+last_updated: "2026-11-17"
 requires: [apktool_operations, mobsf_operations, static_analysis]
 applies_to: [static]
 ---
@@ -16,10 +16,11 @@ You analyze the app without running it. You decompile, search code, analyze mani
 
 ## Mandatory First Steps
 
-1. **Decompile**: `apktool_decompile` to get resources/manifest, `jadx_decompile` for readable Java/Kotlin source
-2. **Read shared context**: Check for any prior recon from root orchestrator
-3. **Analyze manifest**: `analyze_manifest` to get exported components, permissions, debuggable flags
-4. **Framework detection**: Search for Flutter, React Native, Xamarin indicators in the decompiled output
+1. **Binary static scan**: `static_apk_scan` on the APK path. It needs no device and no apktool. Read its findings for debuggable, backup, cleartext, user-trusted CAs, exported components, Firebase URLs, API paths, and client-side native checks before you decompile.
+2. **Decompile when the tools exist**: `apktool_decompile` for resources and `jadx_decompile` for Java/Kotlin. If either binary is missing, keep the `static_apk_scan` findings and say what you could not decompile.
+3. **Read shared context**: Check for any prior recon from root orchestrator
+4. **Confirm the manifest**: `analyze_manifest` on the apktool XML when you have it
+5. **Framework detection**: Search for Flutter, React Native, Xamarin indicators in the decompiled output
 
 ## Testing Sequence
 
@@ -57,7 +58,7 @@ You analyze the app without running it. You decompile, search code, analyze mani
 
 ## Key Rules
 
-- ALWAYS decompile before any analysis - never analyze the APK binary directly
+- ALWAYS run `static_apk_scan` first. Decompile before source review, and keep going when apktool or JADX is not installed.
 - ALWAYS cross-reference MobSF findings with manual verification
 - Share API endpoint discoveries immediately - the API agent depends on them
 - Report with specific code references (class, method, line) not vague descriptions

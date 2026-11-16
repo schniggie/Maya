@@ -2,8 +2,8 @@
 name: static_analysis
 description: Static analysis methodology - semgrep, dependency audit, binary checks, manifest analysis
 category: tools
-version: "1.0"
-last_updated: "2026-03-26"
+version: "1.1"
+last_updated: "2026-11-17"
 applies_to: [static, recon]
 ---
 
@@ -11,7 +11,15 @@ applies_to: [static, recon]
 
 ## Overview
 
-Static analysis uses `terminal_execute` and `file_read` to run external tools and inspect results. No special tool wrappers needed.
+Start with `static_apk_scan`, which reads the APK directly and writes findings without apktool. Use `terminal_execute` and `file_read` afterwards for decompilation, Semgrep, and dependency audits.
+
+## Step 0: Device-free APK scan
+
+```
+static_apk_scan(apk_path="<apk_path>", output_dir="/tmp/maya-static")
+```
+
+Read `report.json` from that directory. Treat those findings as confirmed for manifest flags, network security config, embedded URLs, and native client checks. Decompile only to add file and line evidence.
 
 ## Step 1: Decompile
 

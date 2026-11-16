@@ -18,6 +18,7 @@ from maya.decision.broker import get_decision_broker
 from maya.llm import LLMClient, LLMConfig
 from maya.models import ScanConfig
 from maya.skills import list_available_skills_with_sources, set_cli_skills_dir
+from maya.static.scan import run_static_scan
 from maya.telemetry import Tracer
 from maya.telemetry.event_bus import Event, EventBus, EventType
 
@@ -49,6 +50,28 @@ def _build_task(target: str, platform: str | None, scan_mode: str) -> str:
     )
 
 
+def _run_static_only(package: str | None, target: str | None, output_dir: str | None) -> None:
+    """Scan an APK without an LLM, a device, or apktool, then print where the report landed."""
+    if not package:
+        raise click.UsageError("Missing option '--package'. Example: maya --static-only -p app.apk")
+    if _detect_platform(package) != "android":
+        raise click.UsageError("--static-only reads an APK. Pass a file ending in .apk.")
+    if output_dir is None:
+        output_dir = f"maya_runs/{target or Path(package).stem}"
+    result = run_static_scan(package, output_dir=output_dir, target=target)
+    if result.get("error"):
+        click.echo(str(result["error"]), err=True)
+        raise SystemExit(1)
+    stats = result["stats"]
+    click.echo(f"package: {result['package']}")
+    click.echo(
+        "findings: "
+        f"{stats['findings']} ({stats['critical']} critical, {stats['high']} high, "
+        f"{stats['medium']} medium, {stats['low']} low, {stats['info']} info)"
+    )
+    click.echo(f"output: {output_dir}")
+
+
 def _is_headless() -> bool:
     """True when running without a TTY (e.g. Docker container)."""
     return not sys.stdout.isatty()
@@ -67,13 +90,19 @@ def _is_headless() -> bool:
 )
 @click.option("--model", default=None, help="LiteLLM model string (default from env/config)")
 @click.option("--api-key", default=None, help="LLM API key (default from env/config)")
+@click.option(
+    "--static-only",
+    is_flag=True,
+    default=False,
+    help="Deterministic APK static analysis. No LLM, device, or apktool.",
+)
 # ── Advanced (hidden from --help) ───────────────────────────
 @click.option(
     "--scan-mode", default="comprehensive", type=click.Choice(["quick", "standard", "comprehensive"]), hidden=True
 )
 @click.option("--instruction", default="", hidden=True)
 @click.option("--instruction-file", default=None, hidden=True)
-@click.option("--output-dir", default=None, hidden=True, help="Override auto output directory")
+@click.option("--output-dir", default=None, help="Directory for report.json, report.md, and report.html")
 @click.option("--max-agents", default=7, type=int, hidden=True)
 @click.option("--resume", default=None, hidden=True)
 @click.option("--api-base", default=None, hidden=True)
@@ -108,6 +137,7 @@ def cli(
     non_interactive: bool,
     model: str | None,
     api_key: str | None,
+    static_only: bool,
     scan_mode: str,
     instruction: str,
     instruction_file: str | None,
@@ -137,7 +167,7 @@ def cli(
     \b
     Simple usage:
       maya --target com.app.example --package app.apk --device SERIAL
-      maya --target com.app.example --device SERIAL
+      maya --static-only --package app.apk
       maya --target com.app.example --package app.ipa
     """
 
@@ -175,6 +205,10 @@ def cli(
     # ── If only --package is provided, derive target name ───
     if package and not target:
         target = Path(package).stem
+
+    if static_only:
+        _run_static_only(package, target, output_dir)
+        return
 
     # ── Validate --target is provided for scans ─────────────
     if not target:

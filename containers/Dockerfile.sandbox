@@ -4,6 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV VIRTUAL_ENV=/opt/maya-venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-venv nodejs npm git curl wget unzip jq sqlite3 default-jdk \
@@ -14,16 +15,30 @@ RUN apt-get update && apt-get install -y \
 RUN python3 -m venv "$VIRTUAL_ENV" \
     && "$VIRTUAL_ENV/bin/pip" install --upgrade pip setuptools wheel
 
+# Core runtime + common crypto libs (required).
 RUN "$VIRTUAL_ENV/bin/pip" install --no-cache-dir \
-    fastapi uvicorn requests httpx websockets frida-tools objection mitmproxy semgrep ipython \
-    reflutter pycryptodome cryptography lxml
+    fastapi uvicorn requests httpx websockets ipython \
+    pycryptodome cryptography lxml
+
+# Dynamic-analysis extras. Install individually so one missing wheel
+# (e.g. semgrep on bleeding-edge Kali Python) does not fail the image build.
+RUN set -eux; \
+    for pkg in frida-tools objection mitmproxy reflutter 'semgrep>=1.80'; do \
+      if ! "$VIRTUAL_ENV/bin/pip" install --no-cache-dir "$pkg"; then \
+        echo "WARNING: optional package '$pkg' unavailable for $($VIRTUAL_ENV/bin/python -V); continuing"; \
+      fi; \
+    done
 
 RUN sh -c 'npm view @caido/sdk version >/dev/null 2>&1 && npm install -g @caido/sdk || echo "Caido SDK package unavailable in npm registry; continuing with CLI/REST integration"'
 
-RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
-    && go install github.com/projectdiscovery/httpx/cmd/httpx@latest \
-    && cp /root/go/bin/nuclei /usr/local/bin/nuclei \
-    && cp /root/go/bin/httpx /usr/local/bin/httpx
+RUN set -eux; \
+    if go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
+      && go install github.com/projectdiscovery/httpx/cmd/httpx@latest; then \
+      cp /root/go/bin/nuclei /usr/local/bin/nuclei; \
+      cp /root/go/bin/httpx /usr/local/bin/httpx; \
+    else \
+      echo "WARNING: nuclei/httpx install failed; continuing without them"; \
+    fi
 
 # Best-effort Caido CLI installation; callers may still override with a mounted binary.
 RUN set -eux; \

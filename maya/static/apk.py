@@ -18,6 +18,8 @@ from maya.static.limits import (
     MAX_DEX_STRING_BYTES,
     MAX_DEX_STRINGS,
     MAX_MANIFEST_BYTES,
+    MAX_RETAINED_API_PATHS,
+    MAX_RETAINED_URLS,
     MAX_TOTAL_BYTES,
     MAX_XML_BYTES,
     MAX_XML_FILES,
@@ -84,6 +86,8 @@ class ApkFacts:
     urls: list[str]
     api_paths: list[str]
     native_libraries: list[str]
+    urls_truncated: bool = False
+    api_paths_truncated: bool = False
 
 
 def load_apk(path: str) -> ApkFacts:
@@ -104,8 +108,16 @@ def load_apk(path: str) -> ApkFacts:
         if manifest is None or manifest.name != "manifest":
             raise ValueError("AndroidManifest.xml has no manifest root")
         network = _network_security(archive, names, session)
-        urls, api_paths = _collect_strings(archive, names, session)
-    return _facts_from_manifest(manifest, network, urls, api_paths, _native_libraries(names))
+        found = _collect_strings(archive, names, session)
+    return _facts_from_manifest(
+        manifest,
+        network,
+        found.urls,
+        found.api_paths,
+        _native_libraries(names),
+        urls_truncated=found.urls_truncated,
+        api_paths_truncated=found.paths_truncated,
+    )
 
 
 class _ScanSession:
@@ -152,6 +164,9 @@ def _facts_from_manifest(
     urls: list[str],
     api_paths: list[str],
     native_libraries: list[str],
+    *,
+    urls_truncated: bool = False,
+    api_paths_truncated: bool = False,
 ) -> ApkFacts:
     package_name = _as_str(manifest.attrs.get("package"))
     version_name = _as_optional_str(manifest.attrs.get("versionName"))
@@ -196,6 +211,8 @@ def _facts_from_manifest(
         urls=urls,
         api_paths=api_paths,
         native_libraries=native_libraries,
+        urls_truncated=urls_truncated,
+        api_paths_truncated=api_paths_truncated,
     )
 
 
@@ -274,38 +291,63 @@ def _walk_network_security(node: XmlNode, summary: NetworkSecurity) -> None:
         _walk_network_security(child, summary)
 
 
-def _collect_strings(archive: zipfile.ZipFile, names: list[str], session: _ScanSession) -> tuple[list[str], list[str]]:
-    urls: list[str] = []
-    api_paths: list[str] = []
-    seen_urls: set[str] = set()
-    seen_paths: set[str] = set()
+class _Interesting:
+    """URLs and API paths kept from an APK, with a hard cap on how many are retained."""
 
-    def keep(raw: str) -> None:
-        if not raw or len(raw) > MAX_DEX_STRING_BYTES:
+    def __init__(self) -> None:
+        self.urls: list[str] = []
+        self.api_paths: list[str] = []
+        self.urls_truncated = False
+        self.paths_truncated = False
+        self._urls: set[str] = set()
+        self._paths: set[str] = set()
+
+    def full(self) -> bool:
+        return self.urls_truncated and self.paths_truncated
+
+    def add(self, raw: str) -> None:
+        if not raw or len(raw) > MAX_DEX_STRING_BYTES or self.full():
             return
-        if _API_RE.match(raw) and raw not in seen_paths:
-            seen_paths.add(raw)
-            api_paths.append(raw)
+        if _API_RE.match(raw) and raw not in self._paths:
+            if len(self.api_paths) >= MAX_RETAINED_API_PATHS:
+                self.paths_truncated = True
+            else:
+                self._paths.add(raw)
+                self.api_paths.append(raw)
         for match in _URL_RE.findall(raw):
             url = match.rstrip(").,;\"'")
-            if url in seen_urls or _ignored_url(url):
+            if url in self._urls or _ignored_url(url):
                 continue
-            seen_urls.add(url)
-            urls.append(url)
+            if len(self.urls) >= MAX_RETAINED_URLS:
+                self.urls_truncated = True
+                if self.full():
+                    return
+                continue
+            self._urls.add(url)
+            self.urls.append(url)
 
-    if "resources.arsc" in names:
+
+def _collect_strings(archive: zipfile.ZipFile, names: list[str], session: _ScanSession) -> _Interesting:
+    found = _Interesting()
+    if "resources.arsc" in names and not found.full():
         payload = session.read(archive, "resources.arsc", MAX_ARSC_BYTES)
         for raw in _resource_strings(payload, session.deadline):
-            keep(raw)
+            found.add(raw)
+            if found.full():
+                break
     dex_names = [
         name for name in names if name == "classes.dex" or (name.startswith("classes") and name.endswith(".dex"))
     ]
     if len(dex_names) > MAX_DEX_FILES:
         raise ScanLimitError(f"APK has {len(dex_names)} dex files; the scan budget is {MAX_DEX_FILES}")
     for name in dex_names:
+        if found.full():
+            break
         for raw in _dex_strings(session.read(archive, name, MAX_DEX_BYTES), session.deadline):
-            keep(raw)
-    return urls, api_paths
+            found.add(raw)
+            if found.full():
+                break
+    return found
 
 
 def _resource_strings(data: bytes, deadline: float):

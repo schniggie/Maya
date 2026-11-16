@@ -56,6 +56,8 @@ def _report(
         "trusts_user_cas": facts.network_security.trusts_user_cas,
         "native_libraries": facts.native_libraries,
         "urls": facts.urls,
+        "urls_truncated": facts.urls_truncated,
+        "api_paths_truncated": facts.api_paths_truncated,
         "findings": findings,
         "api_endpoints": endpoints,
         "stats": stats,

@@ -12,9 +12,17 @@ from click.testing import CliRunner
 import maya.tools  # noqa: F401
 from maya.agents.state import AgentState
 from maya.main import cli
-from maya.static.apk import ApkFacts, Component, IntentFilter, NetworkSecurity, _dex_strings, _entry_too_large
+from maya.static.apk import (
+    ApkFacts,
+    Component,
+    IntentFilter,
+    NetworkSecurity,
+    _dex_strings,
+    _entry_too_large,
+    _Interesting,
+)
 from maya.static.binary_xml import parse_string_pool
-from maya.static.limits import MAX_DEX_BYTES, ScanLimitError
+from maya.static.limits import MAX_DEX_BYTES, MAX_RETAINED_API_PATHS, MAX_RETAINED_URLS, ScanLimitError
 from maya.static.rules import build_findings
 from maya.static.scan import run_static_scan
 from maya.telemetry.tracer import Tracer
@@ -191,6 +199,22 @@ def test_string_pool_rejects_an_absurd_count() -> None:
         assert "string pool count" in str(exc)
     else:
         raise AssertionError("expected ScanLimitError")
+
+
+def test_retained_urls_and_api_paths_stop_at_the_cap() -> None:
+    found = _Interesting()
+    for index in range(MAX_RETAINED_URLS + 100):
+        found.add(f"https://host{index}.test/path")
+    assert len(found.urls) == MAX_RETAINED_URLS
+    assert found.urls_truncated is True
+    found.add("https://one-more.test/path")
+    assert len(found.urls) == MAX_RETAINED_URLS
+
+    paths = _Interesting()
+    for index in range(MAX_RETAINED_API_PATHS + 10):
+        paths.add(f"/api/item/{index}")
+    assert len(paths.api_paths) == MAX_RETAINED_API_PATHS
+    assert paths.paths_truncated is True
 
 
 def test_dex_string_count_is_capped() -> None:

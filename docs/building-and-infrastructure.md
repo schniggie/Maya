@@ -18,8 +18,8 @@ This guide covers how to build Maya from source, the Docker sandbox architecture
 ### Install
 
 ```bash
-git clone https://github.com/USER/MOBSEC.git
-cd MOBSEC
+git clone https://github.com/schniggie/Maya.git
+cd Maya
 
 # Create virtual environment
 python -m venv .venv
@@ -85,7 +85,7 @@ Base: kalilinux/kali-rolling
 
 ```bash
 # From project root
-docker build -f containers/Dockerfile.sandbox -t maya-agent:latest .
+docker build -f containers/Dockerfile.sandbox -t maya:latest .
 ```
 
 > **Note**: The build takes 10-20 minutes on first run due to the large toolchain. Subsequent builds use Docker layer caching.
@@ -93,7 +93,7 @@ docker build -f containers/Dockerfile.sandbox -t maya-agent:latest .
 ### Pulling from GHCR
 
 ```bash
-docker pull ghcr.io/USER/maya-agent:latest
+docker pull ghcr.io/schniggie/maya:latest
 ```
 
 ### Image Tags
@@ -110,7 +110,7 @@ docker pull ghcr.io/USER/maya-agent:latest
 docker run --rm -it \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" \
   -v /path/to/app.apk:/data/app.apk \
-  maya-agent:latest \
+  maya:latest \
   --target com.example.app --package /data/app.apk -n
 ```
 
@@ -122,7 +122,7 @@ Host Machine
   ├── Maya CLI process (maya/main.py)
   │     │
   │     ├── Spawns DockerRuntime
-  │     │     ├── docker run maya-agent:latest
+  │     │     ├── docker run maya:latest
   │     │     ├── Mounts /app workspace
   │     │     └── Starts tool_server (FastAPI on port 8000)
   │     │
@@ -200,7 +200,7 @@ Two workflows are configured:
 - Docker build test (PRs only — build without push)
 - CodeQL security analysis
 
-**`docker-publish.yml`** — Runs on push to `main` or version tags:
+**`build-release.yml`** — Runs on push to `main` or version tags:
 - Build + push to GitHub Container Registry (`ghcr.io`)
 - SBOM generation (Anchore)
 - GitHub Release creation on `v*` tags

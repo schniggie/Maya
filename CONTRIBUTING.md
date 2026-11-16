@@ -11,8 +11,8 @@ By participating in this project, you agree to uphold our [Code of Conduct](CODE
 ### Development Setup
 
 ```bash
-git clone https://github.com/USER/MOBSEC.git
-cd MOBSEC
+git clone https://github.com/schniggie/Maya.git
+cd Maya
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
@@ -22,7 +22,10 @@ pip install -e ".[dev]"
 
 ```bash
 # All tests (except device-gated integration)
-pytest -q -k "not integration"
+pytest -q -m "not integration and not smoke"
+
+# DVBA static smoke (requires apktool)
+pytest -q -m smoke
 
 # Full suite (requires connected device)
 pytest -q
@@ -42,7 +45,7 @@ ruff format .
 
 ### Reporting Bugs
 
-1. Check existing [issues](https://github.com/USER/MOBSEC/issues) to avoid duplicates
+1. Check existing [issues](https://github.com/schniggie/Maya/issues) to avoid duplicates
 2. Open a new issue using the **Bug Report** template
 3. Include: steps to reproduce, expected vs actual behavior, environment details
 
@@ -125,4 +128,4 @@ Releases are tagged on `main` with semver (`v0.2.0`, `v1.0.0`). Pushing a tag tr
 
 ## Questions?
 
-Open a [Discussion](https://github.com/USER/MOBSEC/discussions) or reach out to the maintainers.
+Open a [Discussion](https://github.com/schniggie/Maya/discussions) or reach out to the maintainers.

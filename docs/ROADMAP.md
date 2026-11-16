@@ -6,7 +6,7 @@
 
 ## Current Status
 
-Maya has a functional multi-agent framework with 40+ security tools, a skill system, Docker sandbox execution, and an Android companion app. See [PHASE_TRACKER.md](PHASE_TRACKER.md) for detailed implementation status and [SPEC_GAP_CHECKLIST.md](SPEC_GAP_CHECKLIST.md) for spec gap analysis.
+Maya has a functional multi-agent framework with a large tool surface, a skill system, Docker sandbox execution, and an Android companion app. See [AGENT_RUNTIME_TECHNICAL_MODEL.md](AGENT_RUNTIME_TECHNICAL_MODEL.md) for how the runtime works today.
 
 ---
 
@@ -156,7 +156,7 @@ Tighter coupling with Mobile Security Framework for comprehensive static analysi
 
 - [ ] Real-time terminal UI showing agent tree, live findings, tool execution
 - [ ] Web dashboard for multi-scan management
-- [ ] The "Silent Sentinel" design system (see [DESIGN.md](DESIGN.md))
+- [ ] A cohesive terminal/dashboard visual system for live agent telemetry
 
 ---
 
@@ -182,4 +182,4 @@ Tighter coupling with Mobile Security Framework for comprehensive static analysi
 3. **Reference this roadmap** in your PR description
 4. See [contributing.md](contributing.md) for the full contribution guide
 
-Feature requests and new roadmap ideas are welcome as [GitHub Issues](https://github.com/USER/MOBSEC/issues/new?template=feature_request.md).
+Feature requests and new roadmap ideas are welcome as [GitHub Issues](https://github.com/schniggie/Maya/issues/new?template=feature_request.md).

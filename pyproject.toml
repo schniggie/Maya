@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maya-agent"
-version = "0.1.0"
-description = "Bare-metal Phase 1 implementation for Maya AI Agent"
+version = "0.1.1"
+description = "Autonomous AI-powered mobile security agent for Android and iOS"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -41,4 +41,5 @@ maya = "maya.main:cli"
 testpaths = ["tests"]
 markers = [
   "integration: marks tests that require real connected device and companion runtime",
+  "smoke: marks slower static-smoke checks (e.g. apktool against bundled DVBA)",
 ]

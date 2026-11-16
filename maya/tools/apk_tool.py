@@ -38,6 +38,10 @@ def jadx_decompile(apk_path: str, output_dir: str) -> dict:
     }
 
 
+def _android_attr(element: ET.Element, name: str) -> str:
+    return element.attrib.get(f"{{http://schemas.android.com/apk/res/android}}{name}", "")
+
+
 @register_tool(sandbox_execution=True)
 def analyze_manifest(manifest_path: str) -> dict:
     """Parse AndroidManifest.xml and summarize package, permissions, and exported components."""
@@ -46,16 +50,19 @@ def analyze_manifest(manifest_path: str) -> dict:
         return {"error": f"manifest not found: {manifest_path}"}
 
     root = ET.fromstring(path.read_text(encoding="utf-8"))  # noqa: S314
-    ns = {"android": "http://schemas.android.com/apk/res/android"}
     package_name = root.attrib.get("package", "")
-    permissions = [
-        element.attrib.get("{http://schemas.android.com/apk/res/android}name", "")
-        for element in root.findall("uses-permission")
-    ]
+    permissions = [_android_attr(element, "name") for element in root.findall("uses-permission")]
 
     components: dict[str, list[dict[str, str]]] = {"activity": [], "service": [], "receiver": [], "provider": []}
+    application_flags: dict[str, str] = {}
     application = root.find("application")
     if application is not None:
+        application_flags = {
+            "allowBackup": _android_attr(application, "allowBackup"),
+            "debuggable": _android_attr(application, "debuggable"),
+            "usesCleartextTraffic": _android_attr(application, "usesCleartextTraffic"),
+            "networkSecurityConfig": _android_attr(application, "networkSecurityConfig"),
+        }
         for tag_name, key in [
             ("activity", "activity"),
             ("service", "service"),
@@ -65,17 +72,31 @@ def analyze_manifest(manifest_path: str) -> dict:
             for element in application.findall(tag_name):
                 components[key].append(
                     {
-                        "name": element.attrib.get("{http://schemas.android.com/apk/res/android}name", ""),
-                        "exported": element.attrib.get("{http://schemas.android.com/apk/res/android}exported", ""),
-                        "permission": element.attrib.get("{http://schemas.android.com/apk/res/android}permission", ""),
+                        "name": _android_attr(element, "name"),
+                        "exported": _android_attr(element, "exported"),
+                        "permission": _android_attr(element, "permission"),
                     }
                 )
+
+    exported = [
+        {"type": component_type, **component}
+        for component_type, items in components.items()
+        for component in items
+        if component.get("exported") == "true"
+    ]
 
     return {
         "package": package_name,
         "permissions": sorted(p for p in permissions if p),
         "components": components,
-        "xmlns": ns,
+        "application": application_flags,
+        "exported_components": exported,
+        "risk_signals": {
+            "allow_backup": application_flags.get("allowBackup") == "true",
+            "cleartext_traffic": application_flags.get("usesCleartextTraffic") == "true",
+            "debuggable": application_flags.get("debuggable") == "true",
+            "exported_component_count": len(exported),
+        },
     }
 
 

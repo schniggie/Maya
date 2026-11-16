@@ -13,7 +13,7 @@
 If you discover a security vulnerability in Maya, please report it responsibly:
 
 1. **Email**: Send details to the maintainers (add your security contact email here)
-2. **GitHub Security Advisories**: Use the [private vulnerability reporting](https://github.com/USER/MOBSEC/security/advisories/new) feature
+2. **GitHub Security Advisories**: Use the [private vulnerability reporting](https://github.com/schniggie/Maya/security/advisories/new) feature
 
 ### What to Include
 

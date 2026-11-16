@@ -4,8 +4,11 @@
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![CI](https://github.com/schniggie/Maya/actions/workflows/ci.yml/badge.svg)](https://github.com/schniggie/Maya/actions/workflows/ci.yml)
 
 Autonomous security testing agent for mobile apps. Point it at an APK/IPA, provide an LLM API key, and it runs static analysis, dynamic instrumentation, and exploit chaining automatically.
+
+> Maintained fork of [C0oki3s/Maya](https://github.com/C0oki3s/Maya). Upstream appears inactive; this repo is the living base for continued work.
 
 ## Quick Start
 
@@ -15,16 +18,18 @@ Autonomous security testing agent for mobile apps. Point it at an APK/IPA, provi
 docker run --rm -it \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" \
   -v /path/to/app.apk:/data/app.apk \
-  ghcr.io/C0oki3s/maya-agent:latest \
+  ghcr.io/schniggie/maya:latest \
   --target com.example.app --package /data/app.apk -n
 ```
 
 Replace `OPENAI_API_KEY` with your key or use `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, etc.
 
+Image tags are published from this fork on version tags via `.github/workflows/build-release.yml`.
+
 ### Option 2: Local Installation
 
 ```bash
-git clone https://github.com/C0oki3s/Maya.git && cd Maya
+git clone https://github.com/schniggie/Maya.git && cd Maya
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
@@ -52,6 +57,7 @@ maya --target PACKAGE_NAME --package PATH_TO_APK_OR_IPA [--device SERIAL] [OPTIO
 | `--device` | Device serial / iOS UDID |
 | `--scan-mode quick\|standard\|comprehensive` | Analysis depth (default: comprehensive) |
 | `-n, --non-interactive` | Headless mode |
+| `--list-skills` | List loaded skill packs |
 | `--model` | LLM: `openai/gpt-4o`, `anthropic/claude-sonnet-4-20250514`, etc. |
 | `--api-key` | LLM API key (override env var) |
 
@@ -66,6 +72,19 @@ maya --target com.app --package app.apk --model anthropic/claude-sonnet-4-202505
 
 # Resume interrupted scan
 maya --target com.app --resume com.app
+
+# List skills
+maya --list-skills
+```
+
+### Device-free static smoke (DVBA)
+
+This repo bundles Damn Vulnerable Bank (`dvba_v1.1.0.apk`) for local verification:
+
+```bash
+# requires apktool (+ ripgrep for code search)
+python scripts/smoke_dvba_static.py
+pytest -q -m smoke
 ```
 
 ## LLM Configuration
@@ -124,8 +143,9 @@ events.jsonl      # Full telemetry stream
 
 ```bash
 pip install -e ".[dev]"
-pytest -q -k "not integration"    # Unit tests
-ruff check . && ruff format .     # Lint & format
+pytest -q -m "not integration and not smoke"   # fast unit tests
+pytest -q -m smoke                             # DVBA static smoke (needs apktool)
+ruff check . && ruff format .                  # Lint & format
 ```
 
 ## Documentation

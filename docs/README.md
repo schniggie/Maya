@@ -2,9 +2,9 @@
   <h1 align="center">Maya</h1>
   <p align="center"><strong>Autonomous AI-Powered Mobile Security Agent</strong></p>
   <p align="center">
-    <a href="https://github.com/USER/MOBSEC/actions/workflows/ci.yml"><img src="https://github.com/USER/MOBSEC/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <a href="https://github.com/USER/MOBSEC/actions/workflows/docker-publish.yml"><img src="https://github.com/USER/MOBSEC/actions/workflows/docker-publish.yml/badge.svg" alt="Docker"></a>
-    <a href="https://github.com/USER/MOBSEC/pkgs/container/maya-agent"><img src="https://img.shields.io/badge/ghcr.io-maya--agent-blue?logo=docker" alt="GHCR"></a>
+    <a href="https://github.com/schniggie/Maya/actions/workflows/ci.yml"><img src="https://github.com/schniggie/Maya/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://github.com/schniggie/Maya/actions/workflows/build-release.yml"><img src="https://github.com/schniggie/Maya/actions/workflows/build-release.yml/badge.svg" alt="Docker"></a>
+    <a href="https://github.com/schniggie/Maya/pkgs/container/maya"><img src="https://img.shields.io/badge/ghcr.io-maya-blue?logo=docker" alt="GHCR"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
 </p>
@@ -92,8 +92,8 @@ CLI (click) → ScanConfig → Root MayaAgent
 ### 1. Install
 
 ```bash
-git clone https://github.com/USER/MOBSEC.git
-cd MOBSEC
+git clone https://github.com/schniggie/Maya.git
+cd Maya
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
@@ -322,13 +322,13 @@ maya --target com.app --device SERIAL
 ### Pull from GitHub Container Registry
 
 ```bash
-docker pull ghcr.io/USER/maya-agent:latest
+docker pull ghcr.io/schniggie/maya:latest
 ```
 
 ### Build locally
 
 ```bash
-docker build -f containers/Dockerfile.sandbox -t maya-agent:latest .
+docker build -f containers/Dockerfile.sandbox -t maya:latest .
 ```
 
 ### Run
@@ -337,7 +337,7 @@ docker build -f containers/Dockerfile.sandbox -t maya-agent:latest .
 docker run --rm -it \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" \
   -v /path/to/app.apk:/data/app.apk \
-  ghcr.io/USER/maya-agent:latest \
+  ghcr.io/schniggie/maya:latest \
   --target com.example.app --package /data/app.apk -n
 ```
 
@@ -475,7 +475,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - PR review process (1 approval + passing CI + CodeQL)
 - Skill authoring guide
 
-**Quick links**: [Bug Report](https://github.com/USER/MOBSEC/issues/new?template=bug_report.md) · [Feature Request](https://github.com/USER/MOBSEC/issues/new?template=feature_request.md) · [Discussions](https://github.com/USER/MOBSEC/discussions)
+**Quick links**: [Bug Report](https://github.com/schniggie/Maya/issues/new?template=bug_report.md) · [Feature Request](https://github.com/schniggie/Maya/issues/new?template=feature_request.md) · [Discussions](https://github.com/schniggie/Maya/discussions)
 
 ---
 

@@ -277,16 +277,20 @@ All tests go in `tests/`. Name them `test_<module>.py`.
 | Component | Test strategy |
 |-----------|--------------|
 | Tools | Call the function, assert it returns a dict with `status` or `error` |
+| CLI wrappers | Mock `subprocess.run` via `maya.tools.proc.run_cli`; assert argv, timeout, missing binary, and parsed stdout |
 | Skills loader | Verify skill files parse correctly, dependencies resolve |
-| Agent loop | Mock LLM responses, verify tool invocation |
+| Agent loop | Mock LLM responses, verify tool invocation and role routing |
 | LLM config | Verify env/file/CLI precedence |
 | Parser | Feed XML strings, verify parsed tool calls |
 
 ### Running Tests
 
 ```bash
-# Fast unit tests
+# Fast unit tests (default CI; no device, Frida server, or live LLM)
 pytest -q -m "not integration and not smoke"
+
+# CLI wrappers and agent decisions only
+pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py
 
 # DVBA static smoke (requires apktool + ripgrep)
 pytest -q -m smoke
@@ -297,6 +301,8 @@ pytest tests/test_my_tool.py -v
 # Integration tests (needs connected device)
 pytest -q -m integration
 ```
+
+Wrapper and decision tests are unmarked on purpose so they run in the default unit job. Mark device or network tests `integration`. Mark the apktool DVBA check `smoke`.
 
 ---
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from .proc import run_cli
 from .registry import register_tool
 
 
@@ -14,13 +14,9 @@ def apktool_decompile(apk_path: str, output_dir: str) -> dict:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     cmd = ["apktool", "d", apk_path, "-f", "-o", str(out)]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=180)
-    return {
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
-        "exit_code": proc.returncode,
-        "output_dir": str(out),
-    }
+    result = run_cli(cmd, timeout=180)
+    result["output_dir"] = str(out)
+    return result
 
 
 @register_tool(sandbox_execution=True)
@@ -29,13 +25,9 @@ def jadx_decompile(apk_path: str, output_dir: str) -> dict:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     cmd = ["jadx", "-d", str(out), apk_path]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=180)
-    return {
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
-        "exit_code": proc.returncode,
-        "output_dir": str(out),
-    }
+    result = run_cli(cmd, timeout=180)
+    result["output_dir"] = str(out)
+    return result
 
 
 def _android_attr(element: ET.Element, name: str) -> str:
@@ -103,13 +95,7 @@ def analyze_manifest(manifest_path: str) -> dict:
 @register_tool(sandbox_execution=True)
 def search_decompiled_code(path: str, pattern: str) -> dict:
     """Search decompiled code with ripgrep and return matches."""
-    cmd = ["rg", "-n", pattern, path]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=90)
-    return {
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
-        "exit_code": proc.returncode,
-    }
+    return run_cli(["rg", "-n", pattern, path], timeout=90)
 
 
 @register_tool(sandbox_execution=True)
@@ -117,14 +103,9 @@ def ios_class_dump(binary_path: str, output_dir: str) -> dict:
     """Extract Objective-C headers from an iOS binary using class-dump."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    cmd = ["class-dump", "-H", binary_path, "-o", str(out)]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=180)
-    return {
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
-        "exit_code": proc.returncode,
-        "output_dir": str(out),
-    }
+    result = run_cli(["class-dump", "-H", binary_path, "-o", str(out)], timeout=180)
+    result["output_dir"] = str(out)
+    return result
 
 
 @register_tool(sandbox_execution=True)
@@ -132,13 +113,7 @@ def extract_strings(binary_path: str, min_length: str = "4") -> dict:
     """Extract printable strings from a binary or file."""
     if not re.fullmatch(r"\d+", min_length):
         return {"error": "min_length must be numeric"}
-    cmd = ["strings", "-n", min_length, binary_path]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=120)
-    return {
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
-        "exit_code": proc.returncode,
-    }
+    return run_cli(["strings", "-n", min_length, binary_path], timeout=120)
 
 
 # ---------- APK signer path ----------
@@ -153,18 +128,15 @@ def apktool_rebuild(decompiled_dir: str, output_apk: str = "", timeout: str = "1
         return {"error": f"Decompiled directory not found: {decompiled_dir}"}
 
     out_path = output_apk or str(src.parent / f"{src.name}-rebuilt.apk")
-    cmd = ["apktool", "b", str(src), "-o", out_path]
-    try:
-        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=int(timeout))
-        return {
-            "status": "ok" if proc.returncode == 0 else "build_failed",
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
-            "exit_code": proc.returncode,
-            "output_apk": out_path,
-        }
-    except Exception as exc:
-        return {"error": str(exc)}
+    result = run_cli(["apktool", "b", str(src), "-o", out_path], timeout=int(timeout))
+    if result.get("error"):
+        result["output_apk"] = out_path
+        return result
+    return {
+        "status": "ok" if result["exit_code"] == 0 else "build_failed",
+        "output_apk": out_path,
+        **result,
+    }
 
 
 @register_tool(sandbox_execution=True)
@@ -176,18 +148,18 @@ def sign_apk(apk_path: str, timeout: str = "120") -> dict:
     if not _SIGNER_JAR.exists():
         return {"error": f"Signer JAR not found: {_SIGNER_JAR}"}
 
-    cmd = ["java", "-jar", str(_SIGNER_JAR), "--apks", str(apk), "--overwrite"]
-    try:
-        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=int(timeout))
-        return {
-            "status": "ok" if proc.returncode == 0 else "sign_failed",
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
-            "exit_code": proc.returncode,
-            "signed_apk": str(apk),
-        }
-    except Exception as exc:
-        return {"error": str(exc)}
+    result = run_cli(
+        ["java", "-jar", str(_SIGNER_JAR), "--apks", str(apk), "--overwrite"],
+        timeout=int(timeout),
+    )
+    if result.get("error"):
+        result["signed_apk"] = str(apk)
+        return result
+    return {
+        "status": "ok" if result["exit_code"] == 0 else "sign_failed",
+        "signed_apk": str(apk),
+        **result,
+    }
 
 
 @register_tool(sandbox_execution=True)

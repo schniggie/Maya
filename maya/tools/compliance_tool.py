@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from time import time
 
+from .proc import run_cli
 from .registry import register_tool
 
 # Resolve asset paths relative to project root
@@ -96,18 +96,17 @@ def _run_script(package_name: str, script_path: Path, timeout: int = 90) -> dict
     if not script_path.exists():
         return {"error": f"Script not found: {script_path}"}
 
-    cmd = _frida_cmd(package_name, str(script_path))
-    try:
-        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout)
+    result = run_cli(_frida_cmd(package_name, str(script_path)), timeout=timeout)
+    if result.get("timed_out"):
         return {
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
-            "exit_code": proc.returncode,
+            "error": f"Script timed out after {timeout}s",
+            "stdout": result.get("stdout", ""),
+            "stderr": result.get("stderr", ""),
+            "exit_code": -1,
         }
-    except subprocess.TimeoutExpired:
-        return {"error": f"Script timed out after {timeout}s", "exit_code": -1}
-    except Exception as exc:
-        return {"error": str(exc)}
+    if result.get("error"):
+        return {"error": result["error"], "stdout": "", "stderr": result.get("stderr", ""), "exit_code": None}
+    return {"stdout": result["stdout"], "stderr": result["stderr"], "exit_code": result["exit_code"]}
 
 
 @register_tool(sandbox_execution=True)

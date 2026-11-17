@@ -4,6 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from .proc import run_cli
 from .registry import register_tool
 
 _SIGNER_JAR = Path(__file__).resolve().parent.parent.parent / "assets" / "signer" / "uber-apk-signer-1.3.0.jar"
@@ -19,11 +20,7 @@ def _adb_base_command() -> list[str]:
 @register_tool(sandbox_execution=True)
 def reflutter_analyze(apk_path: str) -> dict:
     """Analyze Flutter APK using reflutter."""
-    try:
-        proc = subprocess.run(["reflutter", apk_path], text=True, capture_output=True, timeout=120)
-        return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
-    except Exception as exc:
-        return {"error": str(exc)}
+    return run_cli(["reflutter", apk_path], timeout=120)
 
 
 @register_tool(sandbox_execution=True)

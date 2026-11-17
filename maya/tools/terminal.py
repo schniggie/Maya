@@ -1,39 +1,21 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
+from .proc import run_cli
 from .registry import register_tool
 
 
 @register_tool(sandbox_execution=True)
 def terminal_execute(command: str, timeout: str = "60") -> dict:
     """Execute a shell command and return stdout/stderr/exit_code."""
-    timeout_s = int(timeout)
-    proc = subprocess.run(  # noqa: S602
-        command,
-        shell=True,
-        text=True,
-        capture_output=True,
-        timeout=timeout_s,
-    )
-    return {
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
-        "exit_code": proc.returncode,
-    }
+    return run_cli(command, timeout=int(timeout), shell=True)  # noqa: S604
 
 
 @register_tool(sandbox_execution=True)
 def python_execute(code: str, timeout: str = "60") -> dict:
     """Execute Python code through python -c and return output."""
-    proc = subprocess.run(
-        ["python", "-c", code],
-        text=True,
-        capture_output=True,
-        timeout=int(timeout),
-    )
-    return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
+    return run_cli(["python", "-c", code], timeout=int(timeout))
 
 
 @register_tool(sandbox_execution=True)
@@ -55,22 +37,10 @@ def file_write(path: str, content: str) -> dict:
 @register_tool(sandbox_execution=True)
 def semgrep_scan(path: str, timeout: str = "180") -> dict:
     """Run semgrep against path using default rules."""
-    proc = subprocess.run(
-        ["semgrep", "--config", "auto", path],
-        text=True,
-        capture_output=True,
-        timeout=int(timeout),
-    )
-    return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
+    return run_cli(["semgrep", "--config", "auto", path], timeout=int(timeout))
 
 
 @register_tool(sandbox_execution=True)
 def nuclei_scan(target: str, timeout: str = "180") -> dict:
     """Run nuclei against a target URL or host."""
-    proc = subprocess.run(
-        ["nuclei", "-u", target],
-        text=True,
-        capture_output=True,
-        timeout=int(timeout),
-    )
-    return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
+    return run_cli(["nuclei", "-u", target], timeout=int(timeout))

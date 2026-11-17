@@ -180,9 +180,12 @@ events.jsonl      # Full telemetry stream
 ```bash
 pip install -e ".[dev]"
 pytest -q -m "not integration and not smoke"   # unit tests, including --static-only on DVBA
+pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py
 pytest -q -m smoke                             # apktool decompile of DVBA
 ruff check . && ruff format .                  # Lint & format
 ```
+
+`test_cli_wrappers.py` and `test_agent_decisions.py` mock subprocess and the LLM. They are part of the default unit suite (`not integration and not smoke`) and do not need a device, Frida server, or an API key. Device-gated tests stay marked `integration`; the apktool DVBA check stays marked `smoke`.
 
 ## Documentation
 

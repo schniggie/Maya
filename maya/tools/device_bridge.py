@@ -14,6 +14,7 @@ try:
 except Exception:  # noqa: BLE001
     websockets = None
 
+from .proc import run_cli
 from .registry import register_tool
 
 
@@ -28,26 +29,19 @@ def _adb_base_command() -> list[str]:
 @register_tool(sandbox_execution=True)
 def device_list() -> dict:
     """List connected Android devices via adb devices."""
-    cmd = _adb_base_command() + ["devices"]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=30)
-    return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
+    return run_cli(_adb_base_command() + ["devices"], timeout=30)
 
 
 @register_tool(sandbox_execution=True)
 def device_shell(command: str, timeout: str = "60") -> dict:
     """Execute shell command on connected Android device."""
-    timeout_s = int(timeout)
-    cmd = _adb_base_command() + ["shell", command]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s)
-    return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
+    return run_cli(_adb_base_command() + ["shell", command], timeout=int(timeout))
 
 
 @register_tool(sandbox_execution=True)
 def device_install_app(app_path: str, timeout: str = "120") -> dict:
     """Install an APK onto connected Android device."""
-    cmd = _adb_base_command() + ["install", "-r", app_path]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=int(timeout))
-    return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
+    return run_cli(_adb_base_command() + ["install", "-r", app_path], timeout=int(timeout))
 
 
 @register_tool(sandbox_execution=True)
@@ -159,26 +153,22 @@ def ios_dump_keychain(timeout: str = "90") -> dict:
 @register_tool(sandbox_execution=True)
 def device_set_proxy(host: str = "127.0.0.1", port: str = "8080", timeout: str = "30") -> dict:
     """Set system-wide HTTP proxy on Android device via adb settings."""
-    try:
-        cmd = _adb_base_command() + ["shell", "settings", "put", "global", "http_proxy", f"{host}:{port}"]
-        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=int(timeout))
-        return {
-            "status": "ok",
-            "proxy": f"{host}:{port}",
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
-            "exit_code": proc.returncode,
-        }
-    except Exception as exc:
-        return {"error": str(exc)}
+    result = run_cli(
+        _adb_base_command() + ["shell", "settings", "put", "global", "http_proxy", f"{host}:{port}"],
+        timeout=int(timeout),
+    )
+    if result.get("error"):
+        return result
+    return {"status": "ok", "proxy": f"{host}:{port}", **result}
 
 
 @register_tool(sandbox_execution=True)
 def device_clear_proxy(timeout: str = "30") -> dict:
     """Remove system-wide HTTP proxy from Android device."""
-    try:
-        cmd = _adb_base_command() + ["shell", "settings", "put", "global", "http_proxy", ":0"]
-        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=int(timeout))
-        return {"status": "ok", "stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
-    except Exception as exc:
-        return {"error": str(exc)}
+    result = run_cli(
+        _adb_base_command() + ["shell", "settings", "put", "global", "http_proxy", ":0"],
+        timeout=int(timeout),
+    )
+    if result.get("error"):
+        return result
+    return {"status": "ok", **result}

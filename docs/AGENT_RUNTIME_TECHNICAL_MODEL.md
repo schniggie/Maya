@@ -284,21 +284,26 @@ Also:
 
 ### 9.1 What tests exist
 
-`tests/` currently contains:
+`tests/` covers:
 
-- `tests/test_placeholder.py` -> single `assert True`
+- manifest parsing and static-gate findings, SARIF, and `--fail-on` (`test_analyze_manifest.py`, `test_static_gate.py`)
+- tool registration, skill loading, and `--list-skills` (`test_registry_and_skills.py`)
+- strict sandbox failure and the decision broker (`test_sandbox_and_decisions.py`)
+- DVBA static smoke, marked `smoke` (`test_dvba_static_smoke.py`)
 
-So functional runtime/tool/agent behavior is not exercised by real unit/integration tests in this snapshot.
+There is still no device integration suite. The agent loop itself is not driven end to end in CI.
 
 ### 9.2 What CI runs
 
 `.github/workflows/ci.yml` runs:
 
-- ruff lint/format checks
-- `pytest -q -k "not integration"` across Python 3.10/3.11/3.12
-- Docker build check on PRs
+- ruff lint and format
+- `pytest -q -m "not integration and not smoke"` on Python 3.10, 3.11, and 3.12
+- DVBA static smoke (`pytest -m smoke` and `scripts/smoke_dvba_static.py`)
+- the reusable static-gate workflow on the bundled DVBA APK with `fail_on: none`
+- a Docker image build on pull requests
 
-Given the current tests directory, pytest currently validates only placeholder pass-through behavior.
+`.github/workflows/maya-static-gate.yml` is the device-free APK gate (`report.sarif`, exit 1 on `--fail-on`).
 
 ## 10) External Tools and Dependencies Used by Maya
 
@@ -340,7 +345,7 @@ If another agent needs to reason accurately about this codebase quickly, read in
 6. `maya/tools/reporting.py`, `shared_context.py`, `agents_graph.py`
 7. `companion_app/android/.../Application.kt` + `CommandRouter.kt`
 8. `maya/telemetry/event_bus.py` + `tracer.py`
-9. `.github/workflows/ci.yml` + `tests/test_placeholder.py`
+9. `.github/workflows/ci.yml` + `maya/static_gate.py` + `tests/`
 
 ---
 

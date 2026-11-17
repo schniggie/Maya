@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  security-events: write
 
 jobs:
   lint:
@@ -81,6 +82,16 @@ jobs:
 
       - name: Run DVBA smoke script
         run: python scripts/smoke_dvba_static.py
+
+  static-gate-workflow:
+    name: Static Gate Workflow
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/maya-static-gate.yml
+    with:
+      apk_path: dvba_v1.1.0.apk
+      fail_on: none
 
   docker-build-test:
     name: Docker Build Test

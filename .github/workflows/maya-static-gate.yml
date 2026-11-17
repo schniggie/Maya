@@ -1,0 +1,128 @@
+# Device-free static gate. Call it from an app repo:
+#
+# jobs:
+#   maya:
+#     uses: schniggie/Maya/.github/workflows/maya-static-gate.yml@main
+#     with:
+#       apk_path: app/build/outputs/apk/release/app-release.apk
+#       fail_on: high
+#     permissions:
+#       contents: read
+#       security-events: write
+name: Maya Static Gate
+
+on:
+  workflow_call:
+    inputs:
+      apk_path:
+        description: APK path inside the calling repository
+        required: true
+        type: string
+      fail_on:
+        description: Exit 1 when a finding is at or above this severity
+        required: false
+        type: string
+        default: high
+      output_dir:
+        description: Directory for report.json, report.md, and report.sarif
+        required: false
+        type: string
+        default: maya_runs/static-gate
+  workflow_dispatch:
+    inputs:
+      apk_path:
+        description: APK path inside this repository
+        required: true
+        default: dvba_v1.1.0.apk
+        type: string
+      fail_on:
+        description: Exit 1 when a finding is at or above this severity
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - info
+          - low
+          - medium
+          - high
+          - critical
+      output_dir:
+        description: Directory for report.json, report.md, and report.sarif
+        required: true
+        default: maya_runs/static-gate
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  gate:
+    name: Static gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the app repository
+        uses: actions/checkout@v6
+
+      - name: Resolve Maya source
+        id: maya-src
+        shell: bash
+        run: |
+          ref="${GITHUB_WORKFLOW_REF}"
+          repo="${ref%%/.github/*}"
+          gitref="${ref##*@}"
+          if [ -z "$repo" ] || [ "$repo" = "$ref" ]; then
+            repo="${GITHUB_REPOSITORY}"
+            gitref="${GITHUB_SHA}"
+          fi
+          echo "repo=${repo}" >> "$GITHUB_OUTPUT"
+          echo "gitref=${gitref}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Maya
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.maya-src.outputs.repo }}
+          ref: ${{ steps.maya-src.outputs.gitref }}
+          path: .maya-src
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install apktool and ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool ripgrep
+
+      - name: Install Maya
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ./.maya-src
+
+      - name: Run static gate
+        env:
+          APK_PATH: ${{ inputs.apk_path }}
+          FAIL_ON: ${{ inputs.fail_on }}
+          OUTPUT_DIR: ${{ inputs.output_dir }}
+        run: maya --package "$APK_PATH" --static-gate --fail-on "$FAIL_ON" --output-dir "$OUTPUT_DIR"
+
+      - name: Upload reports
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: maya-static-gate
+          path: |
+            ${{ inputs.output_dir }}/report.json
+            ${{ inputs.output_dir }}/report.md
+            ${{ inputs.output_dir }}/report.sarif
+          if-no-files-found: warn
+
+      - name: Upload SARIF
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ inputs.output_dir }}/report.sarif

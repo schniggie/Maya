@@ -1,1 +1,1 @@
-# Tests directory placeholder
+"""Maya test suite."""

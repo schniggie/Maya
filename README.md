@@ -77,12 +77,37 @@ maya --target com.app --resume com.app
 maya --list-skills
 ```
 
+### Device-free static gate (no LLM, no device)
+
+`apktool` reads the APK. Maya writes `report.json`, `report.md`, and `report.sarif`, then exits 1 when a finding meets `--fail-on`. The default is `none`, so a local run reports without failing the shell. CI should pass `--fail-on high`.
+
+```bash
+maya --package app.apk --static-gate --fail-on high --output-dir maya_runs/app
+```
+
+Call the reusable workflow from an app repository:
+
+```yaml
+jobs:
+  maya:
+    uses: schniggie/Maya/.github/workflows/maya-static-gate.yml@main
+    with:
+      apk_path: app/build/outputs/apk/release/app-release.apk
+      fail_on: high
+    permissions:
+      contents: read
+      security-events: write
+```
+
+The gate reports explicit manifest signals (debuggable, backup, cleartext, user-trusted CAs, exported app components) and a few app-smali checks. It does not start the agent, and it does not claim a full pentest.
+
 ### Device-free static smoke (DVBA)
 
 This repo bundles Damn Vulnerable Bank (`dvba_v1.1.0.apk`) for local verification:
 
 ```bash
 # requires apktool (+ ripgrep for code search)
+maya --package dvba_v1.1.0.apk --static-gate --fail-on high
 python scripts/smoke_dvba_static.py
 pytest -q -m smoke
 ```

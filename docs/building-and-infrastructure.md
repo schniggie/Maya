@@ -100,9 +100,9 @@ docker pull ghcr.io/schniggie/maya:latest
 
 | Tag | Description |
 |-----|-------------|
-| `latest` | Built from `main` branch on every push |
-| `v0.1.0` | Specific release version |
-| `sha-abc1234` | Specific commit |
+| `latest` | Published on a version tag or a manual run of the release workflow |
+| `v0.1.0` | Release tag |
+| `0.1` | Major.minor tag |
 
 ### Running the Image Standalone
 
@@ -192,25 +192,20 @@ Maya is designed to work in reduced-capability modes:
 
 ### GitHub Actions
 
-Two workflows are configured:
+**`ci.yml`** — Runs on every push and pull request to `main`:
+- Ruff lint and format
+- Unit tests on Python 3.10, 3.11, and 3.12 (`pytest -m "not integration and not smoke"`)
+- DVBA static smoke, including the static gate, when `apktool` is installed
+- The reusable static-gate workflow against `dvba_v1.1.0.apk` with `--fail-on none` (the lab app is expected to have findings; this job checks that the workflow runs)
+- Docker image build on pull requests, without pushing
 
-**`ci.yml`** — Runs on every push/PR to `main`:
-- Ruff linting and format checks
-- Pytest on Python 3.10, 3.11, 3.12
-- Docker build test (PRs only — build without push)
-- CodeQL security analysis
+**`maya-static-gate.yml`** — Reusable workflow and manual dispatch. Decompiles an APK and writes `report.json`, `report.md`, and `report.sarif`. Exit 1 when a finding meets `fail_on`. See the [README](../README.md#device-free-static-gate-no-llm-no-device).
 
-**`build-release.yml`** — Runs on push to `main` or version tags:
-- Build + push to GitHub Container Registry (`ghcr.io`)
-- SBOM generation (Anchore)
-- GitHub Release creation on `v*` tags
+**`build-release.yml`** — Runs on `v*` tags and manual dispatch:
+- Build and push `ghcr.io/<owner>/maya` (`latest` on a tag or a manual run)
+- GitHub Release on `v*` tags
 
-### Dependabot
-
-Automated dependency updates for:
-- Python packages (`pyproject.toml`)
-- Docker base images (`containers/Dockerfile.sandbox`)
-- GitHub Actions versions
+There is no CodeQL workflow, Dependabot config, or SBOM step in this repository.
 
 ---
 

@@ -23,6 +23,12 @@ def test_analyze_manifest_extracts_risk_signals() -> None:
     assert ".MainActivity" in exported_names
     assert ".InsecureProvider" in exported_names
 
+    currency = next(item for item in result["components"]["activity"] if item["name"] == ".CurrencyRates")
+    assert currency["exported"] == ""
+    assert currency["intent_filters"][0]["actions"] == ["android.intent.action.VIEW"]
+    assert currency["intent_filters"][0]["schemes"] == ["http", "https"]
+    assert currency["intent_filters"][0]["hosts"] == ["xe.com", "xe.com"]
+
 
 def test_analyze_manifest_missing_file(tmp_path: Path) -> None:
     missing = tmp_path / "maya-does-not-exist-manifest.xml"

@@ -51,13 +51,13 @@ Add a source-code-aware mode where Maya can analyze application source code dire
 
 Provide ready-to-use pipeline templates so teams can run Maya as part of their CI/CD.
 
-- [ ] GitHub Actions reusable workflow (`.github/workflows/maya-scan.yml`)
+- [x] GitHub Actions reusable workflow (`.github/workflows/maya-static-gate.yml`) for the device-free static gate
 - [ ] GitLab CI template (`.gitlab-ci.yml`)
 - [ ] Azure DevOps pipeline template
-- [ ] SARIF output format for GitHub Security tab integration
+- [x] SARIF output (`report.sarif`) for the static gate
 - [ ] JUnit XML output for test framework integration
-- [ ] Exit codes for CI gates (0 = pass, 1 = findings above threshold)
-- [ ] Configurable severity threshold (`--fail-on critical,high`)
+- [x] Exit codes for the static gate (0 = under threshold, 1 = findings at or above it, 2 = tool failure)
+- [x] Configurable severity threshold (`maya --static-gate --fail-on high`)
 - [ ] Compare mode — diff findings between runs/branches
 - [ ] Slack/Teams webhook notifications for scan results
 

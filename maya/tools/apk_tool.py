@@ -4,6 +4,7 @@ import re
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 from .registry import register_tool
 
@@ -42,6 +43,30 @@ def _android_attr(element: ET.Element, name: str) -> str:
     return element.attrib.get(f"{{http://schemas.android.com/apk/res/android}}{name}", "")
 
 
+def _intent_filters(element: ET.Element) -> list[dict[str, list[str]]]:
+    """Collect intent-filter actions, categories, and data schemes/hosts."""
+    filters: list[dict[str, list[str]]] = []
+    for intent in element.findall("intent-filter"):
+        schemes: list[str] = []
+        hosts: list[str] = []
+        for data in intent.findall("data"):
+            scheme = _android_attr(data, "scheme")
+            host = _android_attr(data, "host")
+            if scheme:
+                schemes.append(scheme)
+            if host:
+                hosts.append(host)
+        filters.append(
+            {
+                "actions": [name for node in intent.findall("action") if (name := _android_attr(node, "name"))],
+                "categories": [name for node in intent.findall("category") if (name := _android_attr(node, "name"))],
+                "schemes": schemes,
+                "hosts": hosts,
+            }
+        )
+    return filters
+
+
 @register_tool(sandbox_execution=True)
 def analyze_manifest(manifest_path: str) -> dict:
     """Parse AndroidManifest.xml and summarize package, permissions, and exported components."""
@@ -53,7 +78,7 @@ def analyze_manifest(manifest_path: str) -> dict:
     package_name = root.attrib.get("package", "")
     permissions = [_android_attr(element, "name") for element in root.findall("uses-permission")]
 
-    components: dict[str, list[dict[str, str]]] = {"activity": [], "service": [], "receiver": [], "provider": []}
+    components: dict[str, list[dict[str, Any]]] = {"activity": [], "service": [], "receiver": [], "provider": []}
     application_flags: dict[str, str] = {}
     application = root.find("application")
     if application is not None:
@@ -75,6 +100,7 @@ def analyze_manifest(manifest_path: str) -> dict:
                         "name": _android_attr(element, "name"),
                         "exported": _android_attr(element, "exported"),
                         "permission": _android_attr(element, "permission"),
+                        "intent_filters": _intent_filters(element),
                     }
                 )
 

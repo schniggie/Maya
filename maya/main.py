@@ -18,6 +18,7 @@ from maya.decision.broker import get_decision_broker
 from maya.llm import LLMClient, LLMConfig
 from maya.models import ScanConfig
 from maya.skills import list_available_skills_with_sources, set_cli_skills_dir
+from maya.static_gate import format_summary, run_static_gate
 from maya.telemetry import Tracer
 from maya.telemetry.event_bus import Event, EventBus, EventType
 
@@ -82,6 +83,19 @@ def _is_headless() -> bool:
 @click.option("--default-skills", default="", hidden=True)
 @click.option("--agent-skill", "agent_skills", multiple=True, hidden=True)
 @click.option("--list-skills", "list_skills_flag", is_flag=True, default=False, help="List available skills and exit")
+@click.option(
+    "--static-gate",
+    is_flag=True,
+    default=False,
+    help="Device-free static gate for an APK. No LLM. Writes report.json, report.md, and report.sarif.",
+)
+@click.option(
+    "--fail-on",
+    default="none",
+    show_default=True,
+    type=click.Choice(["none", "info", "low", "medium", "high", "critical"]),
+    help="With --static-gate, exit 1 when a finding is at or above this severity.",
+)
 @click.option("--role", default="root", type=click.Choice(["root", "static", "dynamic", "api", "exploit"]), hidden=True)
 @click.option("--sandbox-mode", default="strict", type=click.Choice(["strict", "permissive"]), hidden=True)
 @click.option("--decision-timeout-seconds", default=30, type=int, hidden=True)
@@ -120,6 +134,8 @@ def cli(
     default_skills: str,
     agent_skills: tuple[str, ...],
     list_skills_flag: bool,
+    static_gate: bool,
+    fail_on: str,
     role: str,
     sandbox_mode: str,
     decision_timeout_seconds: int,
@@ -137,7 +153,7 @@ def cli(
     \b
     Simple usage:
       maya --target com.app.example --package app.apk --device SERIAL
-      maya --target com.app.example --device SERIAL
+      maya --package app.apk --static-gate --fail-on high
       maya --target com.app.example --package app.ipa
     """
 
@@ -164,6 +180,18 @@ def cli(
             description = f": {entry['description']}" if entry.get("description") else ""
             click.echo(f"- {entry['category']}/{entry['skill']}{description}")
         return
+
+    # ── Device-free static gate (no LLM, no device) ────────
+    if static_gate:
+        if not package:
+            raise click.UsageError("--static-gate requires --package pointing at an APK.")
+        if Path(package).suffix.lower() != ".apk":
+            raise click.UsageError("--static-gate supports Android APK files.")
+        if output_dir is None:
+            output_dir = f"maya_runs/{Path(package).stem}"
+        result = run_static_gate(package_path=package, output_dir=output_dir, fail_on=fail_on)
+        click.echo(format_summary(result))
+        raise SystemExit(result.exit_code)
 
     # ── Compatibility shortcut: maya -t app.apk / app.ipa ──
     if target and not package:

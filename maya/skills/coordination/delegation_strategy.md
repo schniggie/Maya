@@ -48,7 +48,8 @@ create_agent(
 
 ### Conditionally Spawn
 
-- Flutter detected -> Flutter specialist: `flutter_analysis, reflutter_operations, frida_operations`
+- Flutter detected -> Flutter specialist: `flutter_analysis, flutter_apps, reflutter_operations, frida_operations`
+- Banking, wallet, or payment app -> add `fintech_mobile_banking, owasp_masvs` to the static and dynamic agents
 - React Native detected -> RN specialist: `react_native_analysis, frida_operations`
 - Complex auth -> Auth specialist: `auth_bypass, api_security, frida_operations`
 - Critical findings ready -> Exploit chainer: `exploit_chainer, frida_operations, caido_operations`

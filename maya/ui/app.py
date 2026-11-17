@@ -134,7 +134,9 @@ TOOL_CATEGORIES = {
 SKILL_CATEGORIES = {
     "agents": ["root_orchestrator", "static_analyzer", "dynamic_tester", "api_discoverer", "exploit_chainer"],
     "platforms": ["android_internals", "ios_internals", "ios_testing"],
-    "frameworks": ["flutter_analysis", "react_native_analysis", "xamarin_analysis"],
+    "frameworks": ["flutter_analysis", "flutter_apps", "react_native_analysis", "xamarin_analysis"],
+    "targets": ["fintech_mobile_banking"],
+    "standards": ["owasp_masvs"],
     "tools": ["frida_operations", "caido_operations", "adb_operations", "objection_operations", "mobsf_operations"],
     "vulnerabilities": [
         "ssl_pinning_bypass",

@@ -186,7 +186,9 @@ Skills are Markdown files with YAML frontmatter. Place them in the correct categ
 |----------|----------------|---------|
 | `vulnerabilities/` | What to find | `insecure_storage.md`, `ssl_pinning_bypass.md` |
 | `tools/` | How to use a tool | `frida_operations.md`, `caido_operations.md` |
-| `frameworks/` | Framework-specific | `flutter_analysis.md`, `react_native_analysis.md` |
+| `frameworks/` | Framework-specific | `flutter_analysis.md`, `flutter_apps.md`, `react_native_analysis.md` |
+| `targets/` | Target-focused verification | `fintech_mobile_banking.md` |
+| `standards/` | Control frameworks | `owasp_masvs.md` |
 | `platforms/` | Platform internals | `android_internals.md`, `ios_internals.md` |
 | `agents/` | Agent behavior | `root_orchestrator.md`, `dynamic_tester.md` |
 | `coordination/` | Multi-agent patterns | `delegation_strategy.md`, `context_sharing.md` |

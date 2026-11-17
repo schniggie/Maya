@@ -182,7 +182,7 @@ Maya is designed to work in reduced-capability modes:
 |-----------|----------|----------|
 | Docker | Not installed | Dry-run mode — tools log what they would execute |
 | LLM API key | Not set | Mock mode — deterministic responses for testing |
-| Device | Not connected | Static-only analysis — no dynamic tools |
+| Device | Not connected | `maya --static-only` still reports on an APK. The agent loop keeps planning dynamic steps it cannot run. |
 | Frida server | Not running | Skips Frida-based instrumentation |
 | Companion app | Not deployed | Falls back to ADB shell commands |
 
@@ -194,23 +194,13 @@ Maya is designed to work in reduced-capability modes:
 
 Two workflows are configured:
 
-**`ci.yml`** — Runs on every push/PR to `main`:
-- Ruff linting and format checks
-- Pytest on Python 3.10, 3.11, 3.12
-- Docker build test (PRs only — build without push)
-- CodeQL security analysis
+**`ci.yml`** runs on every push and pull request to `main`:
+- Ruff lint and format
+- Pytest on Python 3.10, 3.11, and 3.12, including `maya --static-only` against the bundled DVBA APK
+- An apktool decompile of that same APK
+- Docker image build on pull requests, without pushing
 
-**`build-release.yml`** — Runs on push to `main` or version tags:
-- Build + push to GitHub Container Registry (`ghcr.io`)
-- SBOM generation (Anchore)
-- GitHub Release creation on `v*` tags
-
-### Dependabot
-
-Automated dependency updates for:
-- Python packages (`pyproject.toml`)
-- Docker base images (`containers/Dockerfile.sandbox`)
-- GitHub Actions versions
+**`build-release.yml`** runs on `v*` tags and when dispatched by hand. It pushes `ghcr.io/<owner>/maya` and opens a GitHub Release for version tags.
 
 ---
 

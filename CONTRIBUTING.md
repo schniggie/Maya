@@ -68,8 +68,7 @@ ruff format .
 
 All PRs require:
 - **1 approving review** from a maintainer
-- **Passing CI** (lint, tests, Docker build check)
-- **CodeQL** security scan with no new alerts
+- **Passing CI** (lint, tests, device-free DVBA static scan, Docker build check)
 - **No merge conflicts** with `main`
 
 Maintainers will review within 48 hours. Expect feedback — this is a security tool and code quality is critical.

@@ -1,0 +1,24 @@
+"""Fixed budgets for parsing an untrusted APK in the Maya process."""
+
+from __future__ import annotations
+
+MAX_ZIP_ENTRIES = 100_000
+MAX_XML_FILES = 256
+MAX_DEX_FILES = 32
+MAX_MANIFEST_BYTES = 8 * 1024 * 1024
+MAX_XML_BYTES = 2 * 1024 * 1024
+MAX_ARSC_BYTES = 64 * 1024 * 1024
+MAX_DEX_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_BYTES = 256 * 1024 * 1024
+MAX_COMPRESSION_RATIO = 100
+MAX_POOL_STRINGS = 200_000
+MAX_POOL_STRING_BYTES = 1024
+MAX_DEX_STRINGS = 500_000
+MAX_DEX_STRING_BYTES = 300
+MAX_RETAINED_URLS = 4_096
+MAX_RETAINED_API_PATHS = 4_096
+SCAN_DEADLINE_SECONDS = 20
+
+
+class ScanLimitError(ValueError):
+    """The APK asked the scanner to expand past a fixed budget."""

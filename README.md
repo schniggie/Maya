@@ -77,13 +77,25 @@ maya --target com.app --resume com.app
 maya --list-skills
 ```
 
-### Device-free static smoke (DVBA)
+### Device-free static scan
 
-This repo bundles Damn Vulnerable Bank (`dvba_v1.1.0.apk`) for local verification:
+`maya --static-only` reads an APK without an LLM, a device, or apktool. It writes `report.json`, `report.md`, and `report.html`.
 
 ```bash
-# requires apktool (+ ripgrep for code search)
-python scripts/smoke_dvba_static.py
+maya --static-only --package app.apk --output-dir maya_runs/app
+```
+
+The repo bundles Damn Vulnerable Bank for that path:
+
+```bash
+maya --static-only --package dvba_v1.1.0.apk -n
+pytest -q tests/test_static_scan.py
+```
+
+An additional apktool decompile of the same APK is available when you want the decoded tree:
+
+```bash
+python scripts/smoke_dvba_static.py   # requires apktool
 pytest -q -m smoke
 ```
 
@@ -143,8 +155,8 @@ events.jsonl      # Full telemetry stream
 
 ```bash
 pip install -e ".[dev]"
-pytest -q -m "not integration and not smoke"   # fast unit tests
-pytest -q -m smoke                             # DVBA static smoke (needs apktool)
+pytest -q -m "not integration and not smoke"   # unit tests, including --static-only on DVBA
+pytest -q -m smoke                             # apktool decompile of DVBA
 ruff check . && ruff format .                  # Lint & format
 ```
 

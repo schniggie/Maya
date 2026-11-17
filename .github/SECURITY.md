@@ -36,5 +36,4 @@ Maya is a security testing tool. Vulnerabilities in the tool itself (e.g., sandb
 
 - All dangerous tool execution happens inside Docker sandboxes
 - No credentials are stored in code — env vars or config files only
-- CodeQL analysis runs on every PR
-- Dependencies are monitored via Dependabot
+- CI runs Ruff and pytest, including the device-free DVBA static scan, on every pull request

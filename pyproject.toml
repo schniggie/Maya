@@ -27,6 +27,10 @@ dependencies = [
 dev = [
   "pytest>=8.0.0",
 ]
+dynamic = [
+  "frida==16.7.19",
+  "frida-tools==13.6.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

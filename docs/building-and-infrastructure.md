@@ -172,6 +172,10 @@ adb reverse tcp:8080 tcp:8080
 adb shell "su -c '/data/local/tmp/frida-server -D'"
 ```
 
+### Headless emulator
+
+No phone is required for a dynamic smoke. `scripts/emulator_up.sh up` boots a headless AVD. `maya --emulator --package dvba_v1.1.0.apk` installs the APK, starts a matching frida-server, and injects `enumerate/loaded_classes`. Setup, KVM, and Apple Silicon notes are in [emulator.md](emulator.md). The optional GitHub workflow `.github/workflows/emulator-dynamic.yml` is manual or weekly and is not a pull-request check.
+
 ---
 
 ## Graceful Degradation

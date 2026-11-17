@@ -21,15 +21,20 @@ pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# All tests (except device-gated integration)
+# Default CI unit suite (no device, Frida server, or live LLM)
 pytest -q -m "not integration and not smoke"
+
+# CLI wrapper and agent-decision tests only (mocked subprocess / mocked LLM)
+pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py
 
 # DVBA static smoke (requires apktool)
 pytest -q -m smoke
 
-# Full suite (requires connected device)
+# Full suite, including device-gated integration tests
 pytest -q
 ```
+
+There is no extra marker for the wrapper or decision tests. Keep device or network tests on `integration`, and the apktool DVBA check on `smoke`, so they stay out of the default matrix.
 
 ### Linting
 

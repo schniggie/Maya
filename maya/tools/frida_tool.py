@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import tempfile
 from pathlib import Path
 
+from .proc import run_cli
 from .registry import register_tool
 
 
 def _run(command: list[str], timeout: int = 90) -> dict:
-    proc = subprocess.run(command, text=True, capture_output=True, timeout=timeout)
-    return {"stdout": proc.stdout, "stderr": proc.stderr, "exit_code": proc.returncode}
+    return run_cli(command, timeout=timeout)
 
 
 def _frida_target_args(package_name: str) -> list[str]:
@@ -23,7 +22,7 @@ def _frida_target_args(package_name: str) -> list[str]:
 @register_tool(sandbox_execution=True)
 def frida_attach(package_name: str, timeout: str = "60") -> dict:
     """Attach to app process and verify connection."""
-    cmd = ["frida"] + _frida_target_args(package_name) + ["-q"]
+    cmd = ["frida", *_frida_target_args(package_name), "-q"]
     return _run(cmd, timeout=int(timeout))
 
 
@@ -49,9 +48,7 @@ def frida_run_script(package_name: str, script: str, timeout: str = "90") -> dic
     try:
         cmd = [
             "frida",
-            "-U",
-            "-n",
-            package_name,
+            *_frida_target_args(package_name),
             "-l",
             str(script_path),
             "--no-pause",

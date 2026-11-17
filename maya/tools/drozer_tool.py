@@ -1,26 +1,33 @@
 from __future__ import annotations
 
-import os
-
-import requests
-
+from .companion_client import CompanionClient
 from .registry import register_tool
 
 
-def _companion_url() -> str:
-    return os.environ.get("COMPANION_HTTP_URL", "http://127.0.0.1:9999/command")
-
-
 def _send(command: str, params: dict, timeout_s: int = 30) -> dict:
-    """Send a command to the companion app and return the response."""
-    payload = {"id": f"drozer_{command}", "command": command, "params": {k: str(v) for k, v in params.items()}}
+    """Send a command to the companion app and return the response.
+
+    Transport failures become error dicts. A JSON body from the companion is
+    returned as that body so existing command results keep their shape.
+    """
     try:
-        r = requests.post(_companion_url(), json=payload, timeout=timeout_s)
-        if r.headers.get("content-type", "").startswith("application/json"):
-            return r.json()
-        return {"status": "ok", "raw": r.text}
-    except Exception as exc:
-        return {"error": str(exc)}
+        client = CompanionClient.from_env(read_timeout=float(timeout_s))
+        result = client.command(command, params, request_id=f"drozer_{command}")
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}: {exc}", "available": False, "degraded": True}
+    endpoint = str(result.get("endpoint", ""))
+    body = result.get("response")
+    if endpoint.endswith("/command") and isinstance(body, dict):
+        return body
+    if result.get("status") == "ok":
+        if isinstance(body, dict):
+            return body
+        return {"status": "ok", "raw": "" if body is None else str(body)}
+    error = {"error": result.get("error", "companion request failed")}
+    for key in ("detail", "attempts", "available", "timed_out", "http_status", "degraded"):
+        if key in result:
+            error[key] = result[key]
+    return error
 
 
 # ── app.package.* ────────────────────────────────────────────────────

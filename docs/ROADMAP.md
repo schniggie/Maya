@@ -6,7 +6,7 @@
 
 ## Current Status
 
-Maya has a functional multi-agent framework with a large tool surface, a skill system, Docker sandbox execution, and an Android companion app. `maya --static-only` is the device-free APK path covered in CI. Dynamic testing still needs a device. See [AGENT_RUNTIME_TECHNICAL_MODEL.md](AGENT_RUNTIME_TECHNICAL_MODEL.md) for how the runtime works today.
+Maya has a functional multi-agent framework with a large tool surface, a skill system, Docker sandbox execution, and an Android companion app. `maya --static-only` is the device-free APK path covered in CI. Dynamic testing still needs a device. The Frida script catalog and the companion HTTP client have device-free unit tests. See [AGENT_RUNTIME_TECHNICAL_MODEL.md](AGENT_RUNTIME_TECHNICAL_MODEL.md) for how the runtime works today.
 
 ---
 

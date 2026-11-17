@@ -8,6 +8,7 @@ from . import (
     compliance_tool,  # noqa: F401
     device_bridge,  # noqa: F401
     drozer_tool,  # noqa: F401
+    frida_scripts,  # noqa: F401
     frida_tool,  # noqa: F401
     knowledge_tool,  # noqa: F401
     memory_tool,  # noqa: F401

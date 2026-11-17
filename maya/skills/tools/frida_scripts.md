@@ -12,8 +12,10 @@ applies_to: [dynamic, bypass, extract, exploit]
 ## Overview
 
 Pre-built Frida scripts are stored as `.js` asset files in `~/.maya/frida-scripts/` (or `assets/frida-scripts/` in the project). To use a script:
-1. `file_read` the script to get its contents
-2. `frida_run_script(package_name="...", script=<contents>)` to execute it
+1. `frida_list_scripts` to see names, categories, and descriptions
+2. `frida_run_named_script(package_name="...", name="enumerate/loaded_classes")` to load one readable script and inject it
+
+`frida_load_script(name)` returns the source, or an error dict when the name is unknown, ambiguous, or unreadable. `file_read` plus `frida_run_script` still works when you already have the source.
 
 ## When to Compose vs Use Single Module
 

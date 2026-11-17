@@ -7,13 +7,12 @@ import os
 import subprocess
 from pathlib import Path
 
-import requests
-
 try:
     websockets = importlib.import_module("websockets")
 except Exception:  # noqa: BLE001
     websockets = None
 
+from .companion_client import CompanionClient, build_command_payload
 from .proc import run_cli
 from .registry import register_tool
 
@@ -101,35 +100,84 @@ def device_start_frida_server(binary_path: str = "/data/local/tmp/frida-server",
     return device_shell(command=f"su -c '{binary_path} -D &'", timeout=timeout)
 
 
+def _parse_companion_args(command: str, params: str, timeout: str) -> dict:
+    try:
+        timeout_s = float(timeout)
+    except (TypeError, ValueError):
+        return {"status": "error", "error": "timeout must be numeric"}
+    if timeout_s <= 0:
+        return {"status": "error", "error": "timeout must be positive"}
+    try:
+        parsed = json.loads(params or "{}")
+    except json.JSONDecodeError as exc:
+        return {"status": "error", "error": f"params are not valid JSON: {exc.msg}"}
+    if not isinstance(parsed, dict):
+        return {"status": "error", "error": "params must be a JSON object"}
+    if not str(command).strip():
+        return {"status": "error", "error": "command is required"}
+    return {"timeout": timeout_s, "params": parsed, "command": str(command).strip()}
+
+
+def _websocket_command(payload: dict, timeout_s: float) -> dict | None:
+    """Use a websocket only when COMPANION_WS_URL is set. Failures do not raise."""
+    ws_url = os.environ.get("COMPANION_WS_URL", "").strip()
+    if not ws_url:
+        return None
+    if websockets is None:
+        return {"status": "error", "error": "websocket client is not installed"}
+
+    async def _send_ws() -> dict:
+        async with websockets.connect(ws_url, open_timeout=timeout_s, close_timeout=min(timeout_s, 5)) as ws:
+            await ws.send(json.dumps(payload))
+            msg = await asyncio.wait_for(ws.recv(), timeout_s)
+            try:
+                body = json.loads(msg)
+            except (TypeError, json.JSONDecodeError):
+                body = {"raw": msg}
+            return {"status": "ok", "response": body, "transport": "websocket"}
+
+    try:
+        return asyncio.run(_send_ws())
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "error",
+            "error": "companion websocket failed",
+            "detail": f"{type(exc).__name__}: {exc}",
+        }
+
+
 @register_tool(sandbox_execution=True)
 def companion_app_command(command: str, params: str = "{}", timeout: str = "30") -> dict:
-    """Send command to companion app bridge endpoint."""
-    payload = {"id": "cmd_local", "command": command, "params": json.loads(params or "{}")}
-    timeout_s = int(timeout)
+    """Send one command to the companion HTTP server.
 
-    ws_url = os.environ.get("COMPANION_WS_URL", "ws://127.0.0.1:9999/command")
-    if websockets is not None:
+    Checks /health first, retries connection failures, and returns an error dict
+    when the companion or device is absent.
+    """
+    parsed = _parse_companion_args(command, params, timeout)
+    if parsed.get("error"):
+        return parsed
 
-        async def _send_ws() -> dict:
-            async with websockets.connect(ws_url, open_timeout=timeout_s, close_timeout=timeout_s) as ws:
-                await ws.send(json.dumps(payload))
-                msg = await ws.recv()
-                try:
-                    return json.loads(msg)
-                except Exception:
-                    return {"raw": msg}
+    payload, payload_error = build_command_payload(parsed["command"], parsed["params"], "cmd_local")
+    if payload_error is not None or payload is None:
+        return payload_error or {"status": "error", "error": "command is required"}
+    websocket_result = _websocket_command(payload, parsed["timeout"])
+    if websocket_result is not None and websocket_result.get("status") == "ok":
+        return websocket_result
 
-        try:
-            return {"status": "ok", "response": asyncio.run(_send_ws())}
-        except Exception:  # noqa: S110
-            pass  # fall through to HTTP
-
-    host = os.environ.get("COMPANION_HTTP_URL", "http://127.0.0.1:9999/command")
-    r = requests.post(host, json=payload, timeout=timeout_s)
-    return {
-        "status": "ok",
-        "response": r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text,
-    }
+    try:
+        client = CompanionClient.from_env(read_timeout=parsed["timeout"])
+        result = client.command(parsed["command"], parsed["params"], request_id="cmd_local")
+    except Exception as exc:  # noqa: BLE001
+        result = {
+            "status": "error",
+            "error": "companion request failed",
+            "detail": f"{type(exc).__name__}: {exc}",
+            "available": False,
+            "degraded": True,
+        }
+    if websocket_result is not None and result.get("status") != "ok":
+        result = {**result, "websocket_error": websocket_result.get("error", "companion websocket failed")}
+    return result
 
 
 @register_tool(sandbox_execution=True)

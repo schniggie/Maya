@@ -4,6 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from .frida_scripts import load_script
 from .proc import run_cli
 from .registry import register_tool
 
@@ -40,7 +41,12 @@ def frida_spawn(package_name: str, timeout: str = "60") -> dict:
 @register_tool(sandbox_execution=True)
 def frida_run_script(package_name: str, script: str, timeout: str = "90") -> dict:
     """Run an arbitrary Frida JavaScript script against a package."""
-    timeout_s = int(timeout)
+    try:
+        timeout_s = int(timeout)
+    except (TypeError, ValueError):
+        return {"error": "timeout must be numeric", "exit_code": None}
+    if timeout_s <= 0:
+        return {"error": "timeout must be positive", "exit_code": None}
     with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False, encoding="utf-8") as tmp:
         tmp.write(script)
         script_path = Path(tmp.name)
@@ -59,3 +65,18 @@ def frida_run_script(package_name: str, script: str, timeout: str = "90") -> dic
         return result
     finally:
         script_path.unlink(missing_ok=True)
+
+
+@register_tool(sandbox_execution=True)
+def frida_run_named_script(package_name: str, name: str, timeout: str = "90") -> dict:
+    """Load one library script by name and inject it with frida_run_script.
+
+    Unknown, unreadable, or invalid names return an error dict and do not spawn Frida.
+    """
+    loaded = load_script(name)
+    if loaded.get("status") != "ok":
+        return loaded
+    result = frida_run_script(package_name, loaded["source"], timeout=timeout)
+    result["script"] = loaded["name"]
+    result["category"] = loaded["category"]
+    return result

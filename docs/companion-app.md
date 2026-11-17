@@ -16,6 +16,18 @@ Maya uses an on-device companion service to perform runtime operations that must
 
 The companion runs as a local HTTP server on the device. Maya's `device_bridge` tools communicate with it over ADB port forwarding (`adb forward tcp:9999 tcp:9999`), so the agent in Docker sends HTTP requests to `localhost:9999` which routes through to the device.
 
+### Python client
+
+`companion_app_command` and the Drozer-compatible wrappers use `maya.tools.companion_client.CompanionClient`:
+
+1. `GET /health` must report HTTP 200 and a healthy `status` before a command is sent.
+2. Connection failures, connect timeouts, and HTTP 502/503/504 are retried with exponential backoff (`COMPANION_ATTEMPTS`, `COMPANION_BACKOFF_SECONDS`, `COMPANION_CONNECT_TIMEOUT`).
+3. A read timeout on `POST /command` is not retried.
+4. An absent companion or device returns an error dict (`available: false`, `degraded: true`) and does not raise.
+5. `COMPANION_HTTP_URL` may be the origin (`http://127.0.0.1:9999`) or the command URL. `COMPANION_WS_URL` is optional; websocket failure falls back to HTTP.
+
+The Android server rejects an empty body, malformed JSON, a missing `id` or `command`, a bad `Content-Length`, and the wrong HTTP method with a JSON error. Valid commands still go through `CommandRouter`.
+
 ---
 
 ## Android Companion

@@ -34,7 +34,7 @@ Execute these before any delegation:
 | dynamic_tester | dynamic | `frida_operations, frida_stealth, bypass_techniques, ssl_pinning_bypass` |
 | api_discoverer | api | `caido_operations, api_security, idor_testing, jwt_attacks` |
 | exploit_chainer | exploit | `exploit_techniques, bypass_techniques, frida_operations` |
-| flutter_tester | flutter | `flutter_analysis, frida_operations, ssl_pinning_bypass` |
+| flutter_tester | flutter | `flutter_analysis, flutter_apps, reflutter_operations, frida_operations` |
 
 ### Spawn Pattern
 
@@ -78,6 +78,8 @@ Always give specific tasks, not open-ended instructions. Bad: "test the app". Go
 ## Decision Rules
 
 - **When to spawn more agents**: If a sub-agent discovers a new attack surface (e.g., API tester finds WebSocket endpoints -> spawn a WebSocket-focused dynamic tester)
+- **Banking or payment targets**: Add `fintech_mobile_banking` and `owasp_masvs` to the static and dynamic agents
+- **Flutter binaries**: The flutter tester loads `flutter_apps` with `flutter_analysis`
 - **When to intervene**: If an agent has made 3+ identical tool calls with no progress, send it a redirect message
 - **When to force-finish**: If an agent exceeds 80% of its iteration budget with no new findings
 - **When NOT to delegate**: Simple apps (< 5 activities, no native libs, no protections) -> handle everything yourself in a single pass

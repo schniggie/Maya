@@ -194,6 +194,24 @@ report.sarif      # SARIF 2.1.0 from --static-only
 events.jsonl      # Full telemetry stream
 ```
 
+## Skill packs
+
+Skills are Markdown playbooks under `maya/skills/`. The loader picks up every `*.md` file in a category directory. These target packs are verification checklists:
+
+| Skill | Category | Use when |
+| --- | --- | --- |
+| `fintech_mobile_banking` | `targets/` | Banking, wallet, and payment apps |
+| `flutter_apps` | `frameworks/` | The package embeds Flutter (`libflutter.so`, `libapp.so`) |
+| `owasp_masvs` | `standards/` | Map findings to MASVS v2 control groups |
+
+`flutter_analysis` is still the Flutter tool workflow. `flutter_apps` is the assessment checklist.
+
+```bash
+maya --list-skills
+maya --target com.example.bank --package app.apk --skills fintech_mobile_banking,owasp_masvs
+maya --target com.example.app --package app.apk --skills flutter_apps,flutter_analysis
+```
+
 ## Development
 
 ```bash

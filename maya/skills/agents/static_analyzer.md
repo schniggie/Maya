@@ -21,6 +21,7 @@ You analyze the app without running it. You decompile, search code, analyze mani
 3. **Read shared context**: Check for any prior recon from root orchestrator
 4. **Confirm the manifest**: `analyze_manifest` on the apktool XML when you have it
 5. **Framework detection**: Search for Flutter, React Native, Xamarin indicators in the decompiled output
+6. **Target packs**: `inject_skill` with `fintech_mobile_banking` for banking or payment apps, `flutter_apps` when Flutter is present (`flutter_analysis` stays the tool workflow), and `owasp_masvs` to attach control ids to findings
 
 ## Testing Sequence
 

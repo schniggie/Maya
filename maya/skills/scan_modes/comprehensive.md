@@ -27,7 +27,7 @@ Spawn 5+ sub-agents:
 1. **Static Analyzer** - standard skills + `binary_protections, code_tampering`
 2. **Dynamic Tester** - standard skills + `insecure_crypto, bypass_techniques`
 3. **API Discoverer** - standard skills + `jwt_attacks, idor_testing`
-4. **Framework Specialist** - if detected: `flutter_analysis` / `react_native_analysis` / `xamarin_analysis`
+4. **Framework Specialist** - if detected: `flutter_analysis, flutter_apps` / `react_native_analysis` / `xamarin_analysis`. Banking targets also load `fintech_mobile_banking` and `owasp_masvs`
 5. **Exploit Chainer** - skills: `exploit_chainer, exploit_techniques, frida_operations, caido_operations`
 
 ## Exit Criteria

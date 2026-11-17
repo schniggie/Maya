@@ -73,7 +73,7 @@ CLI (click) → ScanConfig → Root MayaAgent
 | Tools | `maya/tools/` | 17 tool modules — registration, validation, routing, sandbox execution |
 | LLM | `maya/llm/` | LiteLLM wrapper, config, memory compression, token tracking |
 | Runtime | `maya/runtime/` | Docker sandbox lifecycle, in-container FastAPI tool server |
-| Skills | `maya/skills/` | 7 categories of Markdown knowledge packs |
+| Skills | `maya/skills/` | Markdown knowledge packs, including target and MASVS playbooks |
 | Telemetry | `maya/telemetry/` | JSON/MD/HTML report generation |
 
 > Deep-dive: [docs/01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md)
@@ -272,7 +272,9 @@ Skills are Markdown files that teach agents **what to find** and **how to operat
 maya/skills/
 ├── vulnerabilities/     # WHAT to find — insecure_storage, ssl_pinning, auth_bypass, insecure_crypto, api_security
 ├── tools/               # HOW to use tools — frida_operations, caido_operations, objection_operations
-├── frameworks/          # App frameworks — flutter_analysis, react_native, xamarin
+├── frameworks/          # App frameworks — flutter_analysis, flutter_apps, react_native, xamarin
+├── targets/             # Target playbooks — fintech_mobile_banking
+├── standards/           # Control mapping — owasp_masvs
 ├── platforms/           # Platform internals — android_internals, ios_internals
 ├── agents/              # Agent behavior — root_orchestrator, static_analyzer, dynamic_tester
 ├── coordination/        # Multi-agent — delegation_strategy, context_sharing
@@ -289,6 +291,8 @@ maya --list-skills
 
 # Load specific skills
 maya --target com.app --skills ssl_pinning_bypass,flutter_analysis
+maya --target com.bank.app --skills fintech_mobile_banking,owasp_masvs
+maya --target com.app --skills flutter_apps,flutter_analysis
 
 # Use a community skill pack
 maya --target com.app --skills-dir ~/community-skills/
@@ -401,10 +405,12 @@ maya/
 ├── agents/              # BaseAgent, MayaAgent, graph, state, checkpointing
 ├── llm/                 # LLMClient, LLMConfig, memory compressor, token tracker
 ├── runtime/             # DockerRuntime, FastAPI tool_server
-├── skills/              # 7 skill categories (Markdown knowledge packs)
+├── skills/              # Markdown knowledge packs, including target and MASVS playbooks
 │   ├── vulnerabilities/ # insecure_storage, ssl_pinning_bypass, auth_bypass, insecure_crypto, api_security
 │   ├── tools/           # frida_operations, caido_operations, objection_operations, apktool_operations
-│   ├── frameworks/      # flutter_analysis, react_native_analysis, xamarin_analysis
+│   ├── frameworks/      # flutter_analysis, flutter_apps, react_native_analysis, xamarin_analysis
+│   ├── targets/         # fintech_mobile_banking
+│   ├── standards/       # owasp_masvs
 │   ├── platforms/       # android_internals, ios_internals
 │   ├── agents/          # root_orchestrator, static_analyzer, dynamic_tester
 │   ├── coordination/    # delegation_strategy, context_sharing

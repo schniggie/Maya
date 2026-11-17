@@ -98,7 +98,7 @@ Maintainers will review within 48 hours. Expect feedback — this is a security 
 
 ### Skills
 
-- Place in the correct category: `vulnerabilities/`, `tools/`, `frameworks/`, `platforms/`, `agents/`, `coordination/`
+- Place in the correct category: `vulnerabilities/`, `tools/`, `frameworks/`, `platforms/`, `agents/`, `coordination/`, `targets/`, `standards/`
 - Include YAML frontmatter with `name`, `description`, `category`, `applies_to`
 - Use `requires` field for skill dependencies
 

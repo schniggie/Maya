@@ -386,6 +386,8 @@ The agent selects scripts automatically based on the scan context, or you can re
 
 `frida_list_scripts` lists that catalog by name, category, and the first `//` description line. `frida_run_named_script(package_name, name)` loads one readable script and injects it through `frida_run_script`. Each script reports `send({ tag, event, data })` and prints the same object as JSON. The helper is copied into every file because the loader injects one script at a time. See [assets/frida-scripts/README.md](../assets/frida-scripts/README.md) and the [README](../README.md#frida-script-library).
 
+`frida_generate_hook` adds one observation or detection-bypass script for a named class and method, using the configured LiteLLM client. Validation and the allow/deny policy are described in [Frida hook generation](frida-hook-generation.md).
+
 ---
 
 ## Development

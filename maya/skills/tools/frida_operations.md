@@ -46,9 +46,10 @@ Before ANY Frida tool call, verify the following:
 ## Common Operations
 
 ### Hooking a Method
-1. `file_read` the appropriate script from assets, or write inline JS
-2. `frida_run_script(package_name="com.target", script=<js_code>)`
-3. Check stdout for hook output (messages sent via `send()`)
+1. Use a bundled name from `frida_list_scripts` when it already observes the target.
+2. For one class or method the catalog does not cover, call `frida_generate_hook` with an observation goal. It refuses exploit, injection, and exfiltration requests.
+3. Inject with `frida_run_named_script` after `persist`, or pass `run=true` and `package_name` to hand the validated script to `frida_run_script`.
+4. Check stdout for `send({ tag, event, data })` JSON lines.
 
 ### SSL Pinning Bypass
 1. `frida_run_named_script(package_name="com.target", name="bypass/ssl_pinning_universal")`

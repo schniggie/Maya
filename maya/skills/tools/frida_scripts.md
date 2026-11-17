@@ -2,7 +2,7 @@
 name: frida_scripts
 description: Pre-built Frida script library - when and how to use each module
 category: tools
-version: "1.1"
+version: "1.2"
 last_updated: "2026-11-17"
 applies_to: [dynamic, bypass, extract, exploit]
 ---
@@ -16,6 +16,7 @@ The 23 bundled scripts live in `assets/frida-scripts/<category>/<name>.js`. The 
 1. `frida_list_scripts` returns name, category, and the first `//` description. It does not return source.
 2. `frida_run_named_script(package_name="...", name="enumerate/loaded_classes")` loads one readable script and injects it with `frida_run_script`.
 3. `frida_load_script(name)` returns the source, or an error dict when the name is unknown, ambiguous, or unreadable.
+4. `frida_generate_hook` synthesizes one observation or detection-bypass script for a class and method the catalog does not already cover. It validates the script, caches it, and can save it under `~/.maya/frida-scripts/<category>/`. Do not ask it to forge attestation, inject a WebView script, send an intent, query a provider, or exfiltrate data. The policy is in `docs/frida-hook-generation.md`.
 
 Each script is self-contained. The loader does not prepend a shared runtime. Results use `send({ tag, event, data })` and the same JSON object on stdout:
 

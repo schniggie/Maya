@@ -64,3 +64,7 @@ Concatenating two scripts is safe only when they do not replace the same method.
 - `WebViewClient.onReceivedSslError` on loaded client subclasses
 
 `ssl_pinning_flutter` hooks `SSL_CTX_set_custom_verify` and `SSL_set_custom_verify` in `libflutter.so` and replaces the callback with one that returns `ssl_verify_ok` (`0`). It waits for the library to load. If the export was stripped, it emits `miss`. It does not scan byte patterns.
+
+## Generated scripts
+
+`frida_generate_hook` can save a new script under `~/.maya/frida-scripts/<category>/`. Those files use this same header and `send({ tag, event, data })` shape. The generator only accepts observation goals and the detection-bypass kinds already in `bypass/`. It does not add scripts to this bundled directory. See [Frida hook generation](../../docs/frida-hook-generation.md).

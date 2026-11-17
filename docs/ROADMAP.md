@@ -85,9 +85,9 @@ First-class support for Android emulators (AVD) and iOS Simulator, removing the 
 
 Move beyond static pre-built scripts to intelligent, adaptive Frida instrumentation.
 
-- [ ] **AI-Generated Scripts** — Agent generates custom Frida hooks based on decompiled code analysis
-  - Analyze class structure → identify interesting methods → generate targeted hooks
-  - Template-based generation with LLM filling in class/method specifics
+- [x] **AI-Generated Scripts** — `frida_generate_hook` takes a structured class, method, and goal, fills a convention template with the configured LiteLLM client, validates the script, and caches it. See [Frida hook generation](frida-hook-generation.md).
+  - [ ] Analyze a decompiled tree and choose methods automatically
+  - [x] Template-based generation with the LLM filling in class and method specifics
 - [ ] **Frida CodeShare Integration** — Fetch community scripts from [codeshare.frida.re](https://codeshare.frida.re)
   - Search CodeShare by keyword/tag
   - Download, validate, and execute CodeShare scripts

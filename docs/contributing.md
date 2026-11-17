@@ -247,6 +247,8 @@ Pre-built scripts go in `assets/frida-scripts/<category>/`:
 | `extract/` | Extract data (crypto keys, SharedPreferences, SQLite) |
 | `ios/` | iOS-specific scripts |
 
+`frida_generate_hook` writes a validated observation or detection-bypass script into `~/.maya/frida-scripts/<category>/`. The intent fields and the safety policy are in [Frida hook generation](frida-hook-generation.md). Leave generated hooks out of `assets/frida-scripts/`.
+
 ### Script Template
 
 Copy the `MAYA` helper from an existing script in `assets/frida-scripts/`. `frida_run_script` injects one file, so the helper has to live in that file. Keep the first line as `// <stem>.js — <description>` so `frida_list_scripts` can show it. Full rules are in [assets/frida-scripts/README.md](../assets/frida-scripts/README.md).

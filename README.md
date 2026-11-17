@@ -63,6 +63,11 @@ maya --target PACKAGE_NAME --package PATH_TO_APK_OR_IPA [--device SERIAL] [OPTIO
 | `--static-only` | Scan an APK with no LLM, device, or apktool |
 | `--fail-on none\|low\|medium\|high\|critical` | With `--static-only`, exit 1 at this severity or above (default: `none`) |
 | `--output-dir` | Report directory. `--static-only` writes json, markdown, html, and SARIF |
+| `--emulator` | Boot a headless Android emulator, install the APK, start frida-server, smoke one `enumerate/` script, then tear it down. No LLM |
+| `--avd-api`, `--avd-abi`, `--avd-device`, `--avd-name` | Emulator API, ABI, profile, and AVD name. Defaults: 34, host ABI, `pixel_6`, `maya` |
+| `--frida-version` | frida-server release to push. Default: installed `frida`, then `16.7.19` |
+| `--smoke-script` | Enumerate script for `--emulator` (default `enumerate/loaded_classes`) |
+| `--keep-emulator` | Leave the AVD running after `--emulator` |
 
 ### Examples
 
@@ -141,6 +146,21 @@ frida_run_named_script("com.example.app", "enumerate/loaded_classes")
 
 `companion_app_command` talks to the Android companion over HTTP. `COMPANION_HTTP_URL` defaults to `http://127.0.0.1:9999/command`. The client calls `GET /health` before `POST /command`, retries connection failures with backoff, and returns an error dict when the companion or device is absent. It does not raise. `COMPANION_ATTEMPTS` (1–5, default 3), `COMPANION_CONNECT_TIMEOUT` (default 2 seconds), and `COMPANION_BACKOFF_SECONDS` (default 0.2) tune that behavior. A read timeout on the command itself is returned immediately so the same command is not sent twice. A websocket is used only when `COMPANION_WS_URL` is set, and a websocket failure falls back to HTTP.
 
+### Headless emulator
+
+`maya --emulator` runs the dynamic path against a headless Android emulator. It does not use an LLM, and it is separate from `--static-only`. The smoke installs the APK, starts a matching `frida-server`, checks the Frida catalog and the companion client, injects one `enumerate/` script (`enumerate/loaded_classes` by default), and tears the emulator down.
+
+```bash
+pip install -e ".[dynamic]"    # frida==16.7.19 and frida-tools==13.6.1
+maya --emulator --package dvba_v1.1.0.apk
+scripts/emulator_up.sh up      # boot only; leave the AVD running
+scripts/emulator_up.sh down
+```
+
+A missing Android SDK, `adb`, or `adb root` prints an error and exits 2. Prerequisites, KVM, and Apple Silicon notes are in [docs/emulator.md](docs/emulator.md). The bundled lab target is Damn Vulnerable Bank, package `com.app.damnvulnerablebank`.
+
+[`.github/workflows/emulator-dynamic.yml`](.github/workflows/emulator-dynamic.yml) is an optional manual or weekly job. It is not part of `ci.yml` and does not gate pull requests. The default CI suite stays device-free.
+
 ## LLM Configuration
 
 ### Environment Variables
@@ -199,12 +219,12 @@ events.jsonl      # Full telemetry stream
 ```bash
 pip install -e ".[dev]"
 pytest -q -m "not integration and not smoke"   # unit tests, including --static-only on DVBA
-pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py tests/test_frida_script_library.py tests/test_companion_client.py
+pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py tests/test_frida_script_library.py tests/test_companion_client.py tests/test_emulator.py tests/test_headless_dynamic.py
 pytest -q -m smoke                             # apktool decompile of DVBA
 ruff check . && ruff format .                  # Lint & format
 ```
 
-`test_cli_wrappers.py` and `test_agent_decisions.py` mock subprocess and the LLM. `test_frida_script_library.py` and `test_companion_client.py` mock the process runner, filesystem, and HTTP session. They are part of the default unit suite (`not integration and not smoke`) and do not need a device, Frida server, or an API key. Device-gated tests stay marked `integration`; the apktool DVBA check stays marked `smoke`.
+`test_cli_wrappers.py` and `test_agent_decisions.py` mock subprocess and the LLM. `test_frida_script_library.py` and `test_companion_client.py` mock the process runner, filesystem, and HTTP session. `test_emulator.py` and `test_headless_dynamic.py` mock the SDK, adb, and frida-server download. They are part of the default unit suite (`not integration and not smoke`) and do not need a device, Frida server, or an API key. Device-gated tests stay marked `integration`; the apktool DVBA check stays marked `smoke`. A live emulator boot is `pytest -q -m integration` with `MAYA_EMULATOR_INTEGRATION=1`.
 
 ## Documentation
 

@@ -6,7 +6,7 @@
 
 ## Current Status
 
-Maya has a functional multi-agent framework with a large tool surface, a skill system, Docker sandbox execution, and an Android companion app. `maya --static-only` is the device-free APK path covered in CI. Dynamic testing still needs a device. The Frida script catalog and the companion HTTP client have device-free unit tests. See [AGENT_RUNTIME_TECHNICAL_MODEL.md](AGENT_RUNTIME_TECHNICAL_MODEL.md) for how the runtime works today.
+Maya has a functional multi-agent framework with a large tool surface, a skill system, Docker sandbox execution, and an Android companion app. `maya --static-only` is the device-free APK path covered in CI. `maya --emulator` boots a headless AVD for the dynamic path when no phone is attached. The Frida script catalog, the companion HTTP client, and the emulator helpers have device-free unit tests. See [AGENT_RUNTIME_TECHNICAL_MODEL.md](AGENT_RUNTIME_TECHNICAL_MODEL.md) for how the runtime works today.
 
 ---
 
@@ -68,14 +68,15 @@ Provide ready-to-use pipeline templates so teams can run Maya as part of their C
 
 First-class support for Android emulators (AVD) and iOS Simulator, removing the need for a physical device during development and CI.
 
-- [ ] Auto-detect emulator vs physical device
-- [ ] AVD management tools (create, start, snapshot, restore)
-- [ ] Emulator-optimized Frida setup (no root required on emulator)
+- [ ] Auto-detect emulator vs physical device inside the agent loop
+- [x] AVD create, headless boot, and teardown (`scripts/emulator_up.sh`, `maya --emulator`)
+- [ ] AVD snapshot and restore
+- [x] frida-server provisioning for the emulator ABI, matched to the installed Frida client (pinned at 16.7.19)
 - [ ] iOS Simulator support for non-jailbreak static analysis
 - [ ] Corellium cloud device integration
 - [ ] Genymotion SaaS integration
 - [ ] Pre-configured emulator images with Frida + companion pre-installed
-- [ ] Headless emulator mode for CI (no GPU required)
+- [x] Headless emulator mode (`-no-window -no-audio -gpu swiftshader_indirect`) and an optional, non-gating CI workflow
 
 ---
 

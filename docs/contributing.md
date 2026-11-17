@@ -292,7 +292,7 @@ All tests go in `tests/`. Name them `test_<module>.py`.
 pytest -q -m "not integration and not smoke"
 
 # CLI wrappers, agent decisions, script library, and companion client
-pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py tests/test_frida_script_library.py tests/test_companion_client.py
+pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py tests/test_frida_script_library.py tests/test_companion_client.py tests/test_emulator.py tests/test_headless_dynamic.py
 
 # DVBA static smoke (requires apktool + ripgrep)
 pytest -q -m smoke

@@ -82,6 +82,62 @@ def _run_static_only(package: str | None, target: str | None, output_dir: str | 
         raise SystemExit(1)
 
 
+def _run_emulator(
+    package: str | None,
+    target: str | None,
+    output_dir: str | None,
+    *,
+    avd_api: int | None,
+    avd_abi: str | None,
+    avd_device: str | None,
+    avd_name: str | None,
+    frida_version: str | None,
+    smoke_script: str,
+    keep_emulator: bool,
+) -> None:
+    """Boot a headless AVD and smoke one enumerate script. No LLM."""
+    if not package:
+        raise click.UsageError("Missing option '--package'. Example: maya --emulator --package dvba_v1.1.0.apk")
+    if _detect_platform(package) != "android":
+        raise click.UsageError("--emulator installs an APK. Pass a file ending in .apk.")
+    from maya.tools.headless_dynamic import run_headless_dynamic
+
+    try:
+        result = run_headless_dynamic(
+            package,
+            target=target,
+            api=avd_api,
+            abi=avd_abi,
+            device=avd_device,
+            avd_name=avd_name,
+            frida_version=frida_version,
+            script=smoke_script,
+            keep=keep_emulator,
+            output_dir=output_dir,
+        )
+    except Exception as exc:
+        click.echo(f"emulator path failed: {exc}", err=True)
+        raise SystemExit(2) from exc
+    if result.get("status") != "ok":
+        click.echo(str(result.get("error") or "emulator path failed"), err=True)
+        detail = result.get("detail")
+        if detail:
+            click.echo(str(detail), err=True)
+        raise SystemExit(2)
+    click.echo(f"serial: {result.get('serial')}")
+    click.echo(f"package: {result.get('package_name')}")
+    click.echo(f"image: {result.get('image')}")
+    click.echo(f"frida-server: {result.get('frida_version')} ({result.get('frida_source')})")
+    click.echo(f"script: {result.get('script')}")
+    click.echo(f"catalog: {result.get('catalog_count')} scripts")
+    companion = result.get("companion") or {}
+    if companion.get("available"):
+        click.echo("companion: reachable")
+    else:
+        click.echo("companion: unavailable (port 9999). The enumerate smoke does not need the companion app.")
+    click.echo(f"output: {result.get('output_dir')}")
+
+
 def _is_headless() -> bool:
     """True when running without a TTY (e.g. Docker container)."""
     return not sys.stdout.isatty()
@@ -112,6 +168,40 @@ def _is_headless() -> bool:
     show_default=True,
     type=click.Choice(list(FAIL_ON_LEVELS)),
     help="With --static-only, exit 1 when a finding is at or above this severity. Exit 2 if the scan cannot run.",
+)
+@click.option(
+    "--emulator",
+    is_flag=True,
+    default=False,
+    help=(
+        "Boot a headless Android emulator, install the APK, start frida-server, and inject one "
+        "enumerate/ script. No LLM. Torn down afterward. Separate from --static-only."
+    ),
+)
+@click.option("--avd-api", default=None, type=int, help="Emulator API level. Default: 34 or MAYA_AVD_API.")
+@click.option(
+    "--avd-abi",
+    default=None,
+    help="Emulator ABI (x86_64, arm64-v8a, x86, armeabi-v7a). Default: host architecture or MAYA_AVD_ABI.",
+)
+@click.option("--avd-device", default=None, help="AVD device profile. Default: pixel_6 or MAYA_AVD_DEVICE.")
+@click.option("--avd-name", default=None, help="AVD name. Default: maya or MAYA_AVD_NAME.")
+@click.option(
+    "--frida-version",
+    default=None,
+    help="frida-server version (X.Y.Z). Default: installed frida package, then 16.7.19.",
+)
+@click.option(
+    "--smoke-script",
+    default="enumerate/loaded_classes",
+    show_default=True,
+    help="Enumerate script to inject with --emulator. Must live under enumerate/.",
+)
+@click.option(
+    "--keep-emulator",
+    is_flag=True,
+    default=False,
+    help="With --emulator, leave the AVD running after the smoke.",
 )
 # ── Advanced (hidden from --help) ───────────────────────────
 @click.option(
@@ -160,6 +250,14 @@ def cli(
     api_key: str | None,
     static_only: bool,
     fail_on: str,
+    emulator: bool,
+    avd_api: int | None,
+    avd_abi: str | None,
+    avd_device: str | None,
+    avd_name: str | None,
+    frida_version: str | None,
+    smoke_script: str,
+    keep_emulator: bool,
     scan_mode: str,
     instruction: str,
     instruction_file: str | None,
@@ -191,6 +289,7 @@ def cli(
       maya --target com.app.example --package app.apk --device SERIAL
       maya --static-only --package app.apk
       maya --static-only --package app.apk --fail-on high
+      maya --emulator --package dvba_v1.1.0.apk
       maya --target com.app.example --package app.ipa
     """
 
@@ -229,6 +328,24 @@ def cli(
     if package and not target:
         target = Path(package).stem
 
+    if emulator and static_only:
+        raise click.UsageError("--emulator and --static-only are separate paths. Run one at a time.")
+    if emulator:
+        if fail_on != "none":
+            raise click.UsageError("--fail-on applies to --static-only.")
+        _run_emulator(
+            package,
+            target,
+            output_dir,
+            avd_api=avd_api,
+            avd_abi=avd_abi,
+            avd_device=avd_device,
+            avd_name=avd_name,
+            frida_version=frida_version,
+            smoke_script=smoke_script,
+            keep_emulator=keep_emulator,
+        )
+        return
     if static_only:
         _run_static_only(package, target, output_dir, fail_on)
         return

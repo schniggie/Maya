@@ -31,6 +31,8 @@ Before ANY Frida tool call, verify the following:
    - Check: `device_shell(command="getenforce")`
    - If needed: `device_shell(command="su -c setenforce 0")`
 
+5. **No phone**: `maya --emulator --package app.apk` boots a headless google_apis AVD, pushes a matching frida-server, and injects one `enumerate/` script. `scripts/emulator_up.sh up` only boots the AVD. See `docs/emulator.md`.
+
 ## When to Use Which Frida Mode
 
 | Scenario | Mode | Why |

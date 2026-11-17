@@ -139,9 +139,18 @@ Or write `~/.maya/config.json`:
 
 ### 3. Prepare your device
 
+A physical device still uses host ADB:
+
 ```bash
 # Start ADB, forward ports, launch frida-server
 ./scripts/setup-host.sh
+```
+
+Without a phone, boot a headless emulator and smoke one enumerate script. Details, KVM, and Apple Silicon notes are in [emulator.md](emulator.md).
+
+```bash
+pip install -e ".[dynamic]"
+maya --emulator --package dvba_v1.1.0.apk
 ```
 
 ### 4. Run a scan
@@ -194,6 +203,9 @@ Core options:
   --static-only              APK static scan. No LLM, device, or apktool
   --fail-on [none|low|medium|high|critical]
                              With --static-only, exit 1 at this severity or above
+  --emulator                 Headless AVD dynamic smoke. No LLM. Separate from --static-only
+  --avd-api / --avd-abi      Emulator API level and ABI
+  --smoke-script             enumerate/ script for --emulator (default enumerate/loaded_classes)
 ```
 
 <details>

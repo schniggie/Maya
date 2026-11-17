@@ -72,7 +72,7 @@ The policy lives in `maya/tools/frida_generate.py` (`prepare_intent`, `source_vi
 
 **Refused before the model is called.** The intent is refused when the goal, platform, or bypass kind is unknown, the category does not match the goal, or any field asks for forging attestation or signatures, injection, a new intent or component start, a content-provider query, exfiltration, a network URL, a native memory patch, an arbitrary native call, a process start, an exploit chain, credential theft, hiding Frida, disabling RASP, or an instruction to ignore this policy. An observation goal that asks to bypass a control or replace a return value is refused too. The caller has to use `bypass_detection` for that, and only for a kind in the list.
 
-**Rejected after the model replies, and not injected.** Comments are ignored. String literals are not. The source is rejected when it contains, among other tokens:
+**Rejected after the model replies, and not injected.** The denylist runs on the raw script. A comment, a string, or a regex literal such as `/[//]/` or `/[/*]/` cannot hide a denied call later on the line, and naming a denied API in a comment is rejected too. The source is rejected when it contains, among other tokens:
 
 - `Memory.*`, native `writeByteArray` / `writeUtf8String` / `writePointer`
 - `evaluateJavascript(`, `addJavascriptInterface(`, `.loadUrl(`, `.loadData(`

@@ -22,7 +22,9 @@ providers, opening a network connection, patching native memory, calling
 arbitrary native functions, starting a process, or building an exploit chain.
 Detection bypasses stay inside the five kinds above.
 
-A static denylist cannot see obfuscated equivalents. Review
+The denylist runs on the raw script. A comment, string, or regex literal cannot
+hide a denied call, and naming a denied API in a comment is rejected too. A
+static denylist still cannot see obfuscated equivalents. Review
 ``~/.maya/frida-generated/audit.jsonl`` before reusing a script. Rejected
 source is written only to that audit log. It is not returned to the agent and
 it is not injected.
@@ -414,14 +416,45 @@ def script_name(intent: HookIntent) -> str:
     return f"{intent.category}/{script_stem(intent)}"
 
 
+_REGEX_KEYWORDS = frozenset(
+    {
+        "await",
+        "case",
+        "delete",
+        "do",
+        "else",
+        "in",
+        "instanceof",
+        "new",
+        "of",
+        "return",
+        "throw",
+        "typeof",
+        "void",
+        "yield",
+    }
+)
+_REGEX_PREFIX = set("([{:;,=!?&|+-*%^~<>")
+
+
 def strip_js_comments(source: str) -> str:
-    """Drop ``//`` and ``/* */`` comments. Strings are copied through unchanged."""
+    """Drop real comments. Strings and regex literals are copied through.
+
+    ``//`` inside a character class such as ``/[//]/`` is part of the regex, not
+    a line comment. ``/*`` inside ``/[/*]/`` is not a block comment either.
+    """
     out: list[str] = []
     index = 0
     length = len(source)
+    regex_ok = True
+
     while index < length:
         char = source[index]
         nxt = source[index + 1] if index + 1 < length else ""
+        if char in " \t\r\n\f":
+            out.append(char)
+            index += 1
+            continue
         if char in {'"', "'", "`"}:
             quote = char
             out.append(char)
@@ -436,7 +469,10 @@ def strip_js_comments(source: str) -> str:
                     index += 1
                     break
                 index += 1
+            regex_ok = False
             continue
+        # These two forms are comments even where a regex could otherwise start.
+        # An empty regex is not spelled //, and /* opens a block comment.
         if char == "/" and nxt == "/":
             index += 2
             while index < length and source[index] != "\n":
@@ -448,8 +484,53 @@ def strip_js_comments(source: str) -> str:
                 index += 1
             index = min(length, index + 2)
             continue
+        if char == "/" and regex_ok:
+            out.append("/")
+            index += 1
+            in_class = False
+            while index < length:
+                reg = source[index]
+                out.append(reg)
+                if reg == "\\" and index + 1 < length:
+                    out.append(source[index + 1])
+                    index += 2
+                    continue
+                if reg == "[":
+                    in_class = True
+                elif reg == "]" and in_class:
+                    in_class = False
+                elif reg == "/" and not in_class:
+                    index += 1
+                    while index < length and source[index].isalpha():
+                        out.append(source[index])
+                        index += 1
+                    break
+                elif reg == "\n":
+                    index += 1
+                    break
+                index += 1
+            regex_ok = False
+            continue
+        if char.isalpha() or char in "_$":
+            start = index
+            index += 1
+            while index < length and (source[index].isalnum() or source[index] in "_$"):
+                index += 1
+            word = source[start:index]
+            out.append(word)
+            regex_ok = word in _REGEX_KEYWORDS
+            continue
+        if char.isdigit():
+            out.append(char)
+            index += 1
+            while index < length and (source[index].isalnum() or source[index] in "."):
+                out.append(source[index])
+                index += 1
+            regex_ok = False
+            continue
         out.append(char)
         index += 1
+        regex_ok = char in _REGEX_PREFIX
     return "".join(out)
 
 
@@ -462,14 +543,18 @@ def _matches(source: str, rules: tuple[tuple[str, str], ...]) -> list[str]:
 
 
 def source_violations(source: str, intent: HookIntent) -> list[str]:
-    """Denylist hits for one script. Comments do not count. String literals do."""
-    code = strip_js_comments(source)
-    found = _matches(code, _SOURCE_RULES)
+    """Denylist hits for one script.
+
+    The raw text is scanned. Comment stripping is not the boundary: a regex
+    literal such as ``/[//]/`` must not hide a denied call later on the line,
+    and a comment that names a denied API is rejected too.
+    """
+    found = _matches(source, _SOURCE_RULES)
     ssl_bypass = intent.goal == "bypass_detection" and intent.bypass_kind == "ssl_pinning"
     if not ssl_bypass:
-        found.extend(_matches(code, _SSL_ONLY_RULES))
+        found.extend(_matches(source, _SSL_ONLY_RULES))
     if intent.goal != "bypass_detection":
-        found.extend(_matches(code, _BYPASS_ONLY_RULES))
+        found.extend(_matches(source, _BYPASS_ONLY_RULES))
     return found
 
 

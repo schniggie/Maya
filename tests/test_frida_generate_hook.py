@@ -25,6 +25,7 @@ from maya.tools.frida_generate import (
     policy_summary,
     prepare_intent,
     script_stem,
+    strip_js_comments,
 )
 from maya.tools.frida_scripts import list_scripts, load_script
 from maya.tools.registry import get_tool, get_tools_prompt
@@ -456,7 +457,9 @@ def test_denylist_rejects_offensive_source_and_keeps_observation() -> None:
     base = _good_android(intent)
     assert lint_script(base, intent=intent, stem=script_stem(intent)) == []
     commented = base.replace("'use strict';", "'use strict';\n// Memory.patchCode is not called")
-    assert lint_script(commented, intent=intent, stem=script_stem(intent)) == []
+    comment_hits = lint_script(commented, intent=intent, stem=script_stem(intent))
+    assert any("Memory" in item for item in comment_hits)
+    assert "Memory.patchCode" not in strip_js_comments("var ok = 1; // Memory.patchCode\nemit('hit');\n")
 
     blocked = {
         'var hidden = "Memory.patchCode";': "Memory",
@@ -521,6 +524,44 @@ def test_denylist_rejects_offensive_source_and_keeps_observation() -> None:
         ),
     )
     assert lint_script(provider_script, intent=provider, stem=script_stem(provider)) == []
+
+
+def test_regex_literal_cannot_hide_a_denied_call(isolated_home: Path) -> None:
+    intent = _observation()
+    base = _good_android(intent)
+    slash = "var re = /[//]/; Memory.patchCode(ptr, code);"
+    star = 'var re = /[/*]/; view.evaluateJavascript("payload", null);'
+    assert "Memory.patchCode" in strip_js_comments(slash)
+    assert "evaluateJavascript" in strip_js_comments(star)
+    assert "emit" in strip_js_comments("var ok = 1; // note\nemit('hit');\n")
+
+    for snippet, fragment in ((slash, "Memory"), (star, "evaluateJavascript")):
+        script = base.replace("return login.call(this, arg0);", f"{snippet}\n        return login.call(this, arg0);")
+        violations = lint_script(script, intent=intent, stem=script_stem(intent))
+        assert any(fragment in item for item in violations), (snippet, violations)
+
+    clean = base.replace(
+        "return login.call(this, arg0);",
+        "var re = /[//]/;\n        return login.call(this, arg0);",
+    )
+    assert lint_script(clean, intent=intent, stem=script_stem(intent)) == []
+
+    smuggled = base.replace(
+        "return login.call(this, arg0);",
+        f"{slash}\n        return login.call(this, arg0);",
+    )
+    result, _fake, _node = _generate(
+        smuggled,
+        goal="log_arguments",
+        target_class=CLASS_NAME,
+        target_method=METHOD_NAME,
+        run="true",
+        package_name=PACKAGE,
+    )
+    assert result["status"] == "error"
+    assert result["policy"] == "source"
+    assert "source" not in result
+    assert not (isolated_home / ".maya" / "frida-scripts").exists()
 
 
 def test_ssl_bypass_may_use_registerclass_and_a_flutter_callback() -> None:

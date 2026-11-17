@@ -55,36 +55,29 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   gate:
     name: Static gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
+      # The calling repo supplies the APK. Do not keep its credentials, and do not
+      # install it: github.workflow_ref is the caller, not this workflow file.
       - name: Checkout the app repository
         uses: actions/checkout@v6
-
-      - name: Resolve Maya source
-        id: maya-src
-        shell: bash
-        run: |
-          ref="${GITHUB_WORKFLOW_REF}"
-          repo="${ref%%/.github/*}"
-          gitref="${ref##*@}"
-          if [ -z "$repo" ] || [ "$repo" = "$ref" ]; then
-            repo="${GITHUB_REPOSITORY}"
-            gitref="${GITHUB_SHA}"
-          fi
-          echo "repo=${repo}" >> "$GITHUB_OUTPUT"
-          echo "gitref=${gitref}" >> "$GITHUB_OUTPUT"
+        with:
+          persist-credentials: false
 
       - name: Checkout Maya
         uses: actions/checkout@v6
         with:
-          repository: ${{ steps.maya-src.outputs.repo }}
-          ref: ${{ steps.maya-src.outputs.gitref }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: .maya-src
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6

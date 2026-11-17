@@ -184,6 +184,23 @@ def test_static_gate_cli_rejects_missing_apk() -> None:
     assert "APK" in ipa.output
 
 
+def test_static_gate_workflow_installs_its_own_source() -> None:
+    workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/maya-static-gate.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+    assert "repository: ${{ job.workflow_repository }}" in workflow
+    assert "ref: ${{ job.workflow_sha }}" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "GITHUB_WORKFLOW_REF" not in workflow
+
+
+def test_ci_limits_security_events_to_the_gate_job() -> None:
+    workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+    header, _, jobs = workflow.partition("\njobs:\n")
+    assert "security-events:" not in header
+    assert "security-events: write" in jobs
+
+
 def test_static_gate_missing_file_exits_2(tmp_path: Path) -> None:
     result = run_static_gate(str(tmp_path / "missing.apk"), str(tmp_path / "out"), fail_on="high")
     assert result.exit_code == 2

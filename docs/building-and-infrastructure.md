@@ -199,7 +199,7 @@ Maya is designed to work in reduced-capability modes:
 - The reusable static-gate workflow against `dvba_v1.1.0.apk` with `--fail-on none` (the lab app is expected to have findings; this job checks that the workflow runs)
 - Docker image build on pull requests, without pushing
 
-**`maya-static-gate.yml`** — Reusable workflow and manual dispatch. Decompiles an APK and writes `report.json`, `report.md`, and `report.sarif`. Exit 1 when a finding meets `fail_on`. See the [README](../README.md#device-free-static-gate-no-llm-no-device).
+**`maya-static-gate.yml`** — Reusable workflow and manual dispatch. Decompiles an APK from the calling repository and writes `report.json`, `report.md`, and `report.sarif`. Exit 1 when a finding meets `fail_on`. The job installs Maya from `job.workflow_repository` at `job.workflow_sha` (the workflow file's own commit), and `security-events: write` is limited to that job. See the [README](../README.md#device-free-static-gate-no-llm-no-device).
 
 **`build-release.yml`** — Runs on `v*` tags and manual dispatch:
 - Build and push `ghcr.io/<owner>/maya` (`latest` on a tag or a manual run)

@@ -361,16 +361,18 @@ Maya ships with **23 pre-built Frida scripts** organized by purpose:
 
 ```
 assets/frida-scripts/
-├── bypass/           # root_detection, ssl_pinning, integrity_check, emulator_detection, debug_detection
+├── bypass/           # ssl_pinning_universal, ssl_pinning_flutter, root_detection_universal,
+│                     # debug_detection, emulator_detection, integrity_check, secure_boot_check
 ├── enumerate/        # loaded_classes, class_methods, native_exports, intent_monitor, rasp_detection
-├── exploit/          # webview_rce, deeplink_injection, content_provider_dump
-├── extract/          # crypto_keys, shared_preferences, sqlite_queries, network_requests, tls_version_check
+├── exploit/          # webview_rce, deeplink_injection, content_provider_dump (observation only)
+├── extract/          # crypto_keys, shared_preferences, sqlite_queries, network_requests,
+│                     # tls_version_check, data_containerization_check
 └── ios/              # nsurlsession_hook, data_protection
 ```
 
 The agent selects scripts automatically based on the scan context, or you can reference them in custom instructions.
 
-`frida_list_scripts` lists that catalog by name, category, and description. `frida_run_named_script(package_name, name)` loads one readable script and injects it through `frida_run_script`. See the [README](../README.md#frida-script-library) for `MAYA_FRIDA_SCRIPTS` and the companion client's retry settings.
+`frida_list_scripts` lists that catalog by name, category, and the first `//` description line. `frida_run_named_script(package_name, name)` loads one readable script and injects it through `frida_run_script`. Each script reports `send({ tag, event, data })` and prints the same object as JSON. The helper is copied into every file because the loader injects one script at a time. See [assets/frida-scripts/README.md](../assets/frida-scripts/README.md) and the [README](../README.md#frida-script-library).
 
 ---
 

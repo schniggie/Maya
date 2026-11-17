@@ -2,17 +2,17 @@
 name: ssl_pinning_bypass
 description: Universal SSL pinning bypass workflow
 category: vulnerabilities
-version: "1.1"
-last_updated: "2026-03-26"
+version: "1.2"
+last_updated: "2026-11-17"
 requires: [frida_operations]
 ---
 
 # SSL Pinning Bypass Skill
 
 1. Attach or spawn target process with Frida.
-2. Inject universal bypass hooks for TrustManager and OkHttp.
-3. Verify bypass by capturing HTTPS traffic in proxy.
-4. Record evidence and fallback techniques if bypass fails.
+2. Inject `bypass/ssl_pinning_universal` with `frida_run_named_script`. It hooks OkHttp3 CertificatePinner, SSLContext TrustManager replacement, Conscrypt trust checks, and WebView SSL errors when those classes exist. For Flutter, run `bypass/ssl_pinning_flutter` separately; it only replaces BoringSSL `SSL_CTX_set_custom_verify` when `libflutter.so` exports it.
+3. Parse `{ tag, event, data }` from stdout. Treat `miss` as "this stack is not in the app", not as a failed session.
+4. Verify bypass by capturing HTTPS traffic in the proxy, then record which `hook` events fired.
 
 ## Tool Quick Reference
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -173,8 +174,9 @@ def test_shipped_catalog_matches_assets_and_hides_source(monkeypatch: pytest.Mon
     loaded = load_script("enumerate/loaded_classes")
     assert loaded["status"] == "ok"
     assert loaded["category"] == "enumerate"
-    assert "Enumerate all loaded Java classes" in loaded["description"]
+    assert loaded["description"].startswith("Enumerate loaded Java classes")
     assert "enumerateLoadedClasses" in loaded["source"]
+    assert 'var tag = "loaded_classes"' in loaded["source"]
 
 
 def test_named_script_injects_fixture_through_frida_run_script(
@@ -209,3 +211,38 @@ def test_named_script_errors_do_not_spawn_frida(
     numeric = frida_run_script(PACKAGE, "console.log('fixture');", timeout="soon")
     assert numeric == {"error": "timeout must be numeric", "exit_code": None}
     assert cli.calls == []
+
+
+def test_bundled_scripts_match_the_message_convention(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("MAYA_FRIDA_SCRIPTS", raising=False)
+    monkeypatch.setattr("maya.tools.frida_scripts.Path.home", lambda: tmp_path)
+    listed = list_scripts()
+    assert listed["status"] == "ok"
+    assert listed["count"] == 23
+
+    node = shutil.which("node")
+    categories = {"bypass", "enumerate", "extract", "exploit", "ios"}
+    for item in listed["scripts"]:
+        loaded = load_script(item["name"], roots=[bundled_root()])
+        assert loaded["status"] == "ok", item["name"]
+        assert loaded["category"] in categories
+        assert loaded["description"]
+        assert len(loaded["description"]) <= 200
+        source = loaded["source"]
+        header = "\n".join(source.splitlines()[:8])
+        assert source.splitlines()[0].startswith(f"// {item['stem']}.js")
+        assert f"// category: {item['category']}" in header
+        assert 'var tag = "' + item["stem"] + '"' in source
+        assert "maya-frida-message: { tag, event, data }" in source
+        assert "'use strict';" in source
+        if item["category"] == "ios":
+            assert "// platform: ios" in header
+            assert "ObjC.available" in source
+        else:
+            assert "// platform: android" in header
+        if "Java.perform(" in source:
+            assert "Java.available" in source
+        if node:
+            script_path = bundled_root() / f"{item['name']}.js"
+            completed = subprocess.run([node, "--check", str(script_path)], capture_output=True, text=True)
+            assert completed.returncode == 0, completed.stderr

@@ -192,7 +192,7 @@ iOS companion:
 
 ### 6.5 Compliance/Automation Layer
 
-`maya/tools/frida_scripts.py` catalogs `assets/frida-scripts/` (or `/opt/maya-assets/frida-scripts` in the sandbox image). `frida_run_named_script` loads one script by name and injects it with `frida_run_script`.
+`maya/tools/frida_scripts.py` catalogs `assets/frida-scripts/` (or `/opt/maya-assets/frida-scripts` in the sandbox image). `frida_run_named_script` loads one script by name and injects it with `frida_run_script`. Bundled scripts are self-contained and report `send({ tag, event, data })`, mirrored as JSON on stdout. `tag` is the file stem. `event` is `ready`, `hook`, `hit`, `miss`, `error`, or `done`.
 
 `maya/tools/compliance_tool.py` runs predefined Frida scripts from `assets/frida-scripts/` grouped by:
 

@@ -137,6 +137,8 @@ frida_run_named_script("com.example.app", "enumerate/loaded_classes")
 
 `frida_list_scripts` is the same catalog for the agent. `MAYA_FRIDA_SCRIPTS` is an extra directory and overrides a bundled name when both exist. `~/.maya/frida-scripts/` is included when that directory exists and the env var is unset. Inside the sandbox image the bundled copy is `/opt/maya-assets/frida-scripts`.
 
+Every bundled script is self-contained. `frida_run_script` injects one file, so the message helper is copied into each script rather than loaded from a shared module. Scripts report with `send({ tag, event, data })` and mirror that object as one JSON line on stdout. `tag` is the script stem, `event` is `ready`, `hook`, `hit`, `miss`, `error`, or `done`, and `data` is a plain object. The first `//` line is the catalog description. See `assets/frida-scripts/README.md`. The `exploit/` scripts observe WebView settings, deeplink parameters, and content-provider calls the app already makes. They do not inject script, send intents, or query providers on their own.
+
 ### Companion client
 
 `companion_app_command` talks to the Android companion over HTTP. `COMPANION_HTTP_URL` defaults to `http://127.0.0.1:9999/command`. The client calls `GET /health` before `POST /command`, retries connection failures with backoff, and returns an error dict when the companion or device is absent. It does not raise. `COMPANION_ATTEMPTS` (1–5, default 3), `COMPANION_CONNECT_TIMEOUT` (default 2 seconds), and `COMPANION_BACKOFF_SECONDS` (default 0.2) tune that behavior. A read timeout on the command itself is returned immediately so the same command is not sent twice. A websocket is used only when `COMPANION_WS_URL` is set, and a websocket failure falls back to HTTP.

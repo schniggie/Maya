@@ -169,6 +169,7 @@ maya_runs/com.example.app/
 ├── report.json        # Machine-readable findings
 ├── report.md          # Human-readable Markdown
 ├── report.html        # Styled HTML report
+├── report.sarif       # SARIF 2.1.0 from maya --static-only
 └── events.jsonl       # Full telemetry stream
 ```
 
@@ -190,6 +191,9 @@ Core options:
   -n, --non-interactive      Force headless mode
   --model TEXT               LiteLLM model string (e.g. openai/gpt-4o)
   --api-key TEXT             LLM API key
+  --static-only              APK static scan. No LLM, device, or apktool
+  --fail-on [none|low|medium|high|critical]
+                             With --static-only, exit 1 at this severity or above
 ```
 
 <details>

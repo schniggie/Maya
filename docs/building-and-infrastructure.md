@@ -192,13 +192,16 @@ Maya is designed to work in reduced-capability modes:
 
 ### GitHub Actions
 
-Two workflows are configured:
+Three workflows are configured:
 
 **`ci.yml`** runs on every push and pull request to `main`:
 - Ruff lint and format
 - Pytest on Python 3.10, 3.11, and 3.12, including `maya --static-only` against the bundled DVBA APK
 - An apktool decompile of that same APK
+- The reusable static scan on `dvba_v1.1.0.apk` with `fail_on: none`
 - Docker image build on pull requests, without pushing
+
+**`maya-static-scan.yml`** is a reusable workflow. A caller passes `apk_path` and `fail_on`. It installs Maya from the workflow file's own commit, runs `maya --static-only`, and uploads `report.sarif`. `security-events: write` is set only on the upload job.
 
 **`build-release.yml`** runs on `v*` tags and when dispatched by hand. It pushes `ghcr.io/<owner>/maya` and opens a GitHub Release for version tags.
 

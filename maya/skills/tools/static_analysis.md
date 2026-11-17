@@ -19,7 +19,7 @@ Start with `static_apk_scan`, which reads the APK directly and writes findings w
 static_apk_scan(apk_path="<apk_path>", output_dir="/tmp/maya-static")
 ```
 
-Read `report.json` from that directory. Treat those findings as confirmed for manifest flags, network security config, embedded URLs, and native client checks. Decompile only to add file and line evidence.
+Read `report.json` and `report.sarif` from that directory. Treat those findings as confirmed for manifest flags, network security config, embedded URLs, and native client checks. Decompile only to add file and line evidence.
 
 ## Step 1: Decompile
 

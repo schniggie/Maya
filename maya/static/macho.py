@@ -56,6 +56,7 @@ _FILETYPE = {1: "object", 2: "execute", 6: "dylib", 8: "bundle"}
 _MAX_COMMANDS = 512
 _MAX_MARKER_SCAN = 4 * 1024 * 1024
 _MAX_STRING_SAMPLE = 1024 * 1024
+_MAX_RECORDED_RANGES = 4
 _CANARY_MARKERS = (b"stack_chk_fail", b"stack_chk_guard")
 _ARC_MARKERS = (b"objc_release", b"objc_storeStrong")
 _OBJC_MARKERS = (b"_OBJC_CLASS_",)
@@ -287,11 +288,11 @@ def _parse_slice(data: bytes, offset: int, size: int) -> MachOFacts:
             cryptoff, cryptsize, cryptid = struct.unpack_from(endian + "III", data, cursor + 8)
             if cryptid:
                 encrypted = True
-                if cryptsize > 0 and cryptoff >= 0:
+                if cryptsize > 0 and cryptoff >= 0 and len(crypt_ranges) < _MAX_RECORDED_RANGES:
                     crypt_ranges.append((cryptoff, cryptoff + cryptsize))
         elif base == LC_SYMTAB and cmdsize >= 24:
             _symoff, _nsyms, stroff, strsize = struct.unpack_from(endian + "IIII", data, cursor + 8)
-            if strsize > 0 and stroff >= 0:
+            if strsize > 0 and stroff >= 0 and len(string_ranges) < _MAX_RECORDED_RANGES:
                 string_ranges.append((stroff, min(strsize, _MAX_STRING_SAMPLE)))
         cursor += cmdsize
         walked += 1
@@ -340,6 +341,19 @@ def _marker_state(
     return False
 
 
+def _mask_encrypted(blob: bytearray, base: int, crypt_ranges: list[tuple[int, int]]) -> bool:
+    """Zero encrypted spans that overlap this chunk. Work stays inside ``blob``."""
+    covered = False
+    for crypt_off, crypt_end in crypt_ranges[:_MAX_RECORDED_RANGES]:
+        lo = max(crypt_off, base)
+        hi = min(crypt_end, base + len(blob))
+        if lo < hi:
+            covered = True
+            start = lo - base
+            blob[start : start + (hi - lo)] = b"\x00" * (hi - lo)
+    return covered
+
+
 def _visible_bytes(
     data: bytes,
     slice_off: int,
@@ -355,9 +369,10 @@ def _visible_bytes(
     chunks: list[bytes] = []
     covered = False
     seen: set[int] = set()
-    ranges = string_ranges or [(0, min(_MAX_MARKER_SCAN, max(slice_end - slice_off, 0)))]
-    if not string_ranges and slice_end - slice_off <= _MAX_MARKER_SCAN:
-        ranges = [(0, slice_end - slice_off)]
+    ranges = list(string_ranges[:_MAX_RECORDED_RANGES])
+    if not ranges:
+        span = min(_MAX_MARKER_SCAN, max(slice_end - slice_off, 0))
+        ranges = [(0, span if slice_end - slice_off > _MAX_MARKER_SCAN else slice_end - slice_off)]
     for start, size in ranges:
         # Load-command offsets are file-absolute in a fat Mach-O and slice-relative
         # in some unpacked slices. Keep both when they land inside this slice.
@@ -369,24 +384,14 @@ def _visible_bytes(
             if end <= candidate:
                 continue
             blob = bytearray(data[candidate:end])
-            for crypt_off, crypt_end in crypt_ranges:
-                lo = max(crypt_off, candidate)
-                hi = min(crypt_end, end)
-                if lo < hi:
-                    covered = True
-                    for index in range(lo - candidate, hi - candidate):
-                        blob[index] = 0
+            if _mask_encrypted(blob, candidate, crypt_ranges):
+                covered = True
             chunks.append(bytes(blob))
     if not chunks and slice_end > slice_off:
         end = min(slice_end, slice_off + _MAX_MARKER_SCAN)
         blob = bytearray(data[slice_off:end])
-        for crypt_off, crypt_end in crypt_ranges:
-            lo = max(crypt_off, slice_off)
-            hi = min(crypt_end, end)
-            if lo < hi:
-                covered = True
-                for index in range(lo - slice_off, hi - slice_off):
-                    blob[index] = 0
+        if _mask_encrypted(blob, slice_off, crypt_ranges):
+            covered = True
         chunks.append(bytes(blob))
     return _join_samples(chunks), covered
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import plistlib
 import re
+import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,12 +16,16 @@ from maya.static.limits import (
     MAX_MANIFEST_BYTES,
     MAX_RETAINED_API_PATHS,
     MAX_RETAINED_URLS,
+    MAX_TOTAL_BYTES,
     MAX_ZIP_ENTRIES,
+    SCAN_DEADLINE_SECONDS,
+    ScanBudgetError,
     ScanLimitError,
 )
 from maya.static.macho import apply_otool, inspect_macho, otool_probe
 
 _PROFILE_CAP = 1024 * 1024
+_MAX_XCENT_FILES = 4
 _URL_RE = re.compile(r"https?://[^\s\"'<>]{4,200}")
 _API_RE = re.compile(r"^/(?:api|rest|graphql)(?:/[A-Za-z0-9_.{}\-]{1,48}){1,8}$")
 _IGNORED_HOSTS = {
@@ -94,11 +99,12 @@ class IpaFacts:
 def load_ipa(path: str) -> IpaFacts:
     """Open an ``.ipa`` zip or an unpacked ``.app`` directory."""
     source = Path(path)
+    budget = _Budget()
     if not source.exists():
         raise ValueError(f"IPA not found: {path}")
     if source.is_dir():
         root = _directory_root(source)
-        return _collect(_DirBundle(root))
+        return _collect(_DirBundle(root, budget))
     if not source.is_file():
         raise ValueError(f"IPA not found: {path}")
     try:
@@ -106,11 +112,30 @@ def load_ipa(path: str) -> IpaFacts:
     except zipfile.BadZipFile as exc:
         raise ValueError(f"not a zip IPA: {path}") from exc
     with archive:
+        budget.check()
         names = [name for name in archive.namelist() if _safe_zip_name(name)]
         if len(names) > MAX_ZIP_ENTRIES:
             raise ScanLimitError(f"IPA has {len(names)} entries; the scan budget is {MAX_ZIP_ENTRIES}")
         prefix = _zip_prefix(names)
-        return _collect(_ZipBundle(archive, prefix, names))
+        return _collect(_ZipBundle(archive, prefix, names, budget))
+
+
+class _Budget:
+    """Running uncompressed-byte total and wall deadline for one IPA read."""
+
+    def __init__(self) -> None:
+        self.deadline = time.monotonic() + SCAN_DEADLINE_SECONDS
+        self.used = 0
+
+    def check(self) -> None:
+        if time.monotonic() > self.deadline:
+            raise ScanBudgetError("static scan exceeded the time budget")
+
+    def charge(self, size: int) -> None:
+        self.check()
+        self.used += max(size, 0)
+        if self.used > MAX_TOTAL_BYTES:
+            raise ScanBudgetError(f"IPA entries expand past the {MAX_TOTAL_BYTES} byte scan budget")
 
 
 def _collect(bundle: _ZipBundle | _DirBundle) -> IpaFacts:
@@ -173,9 +198,10 @@ def _collect(bundle: _ZipBundle | _DirBundle) -> IpaFacts:
 
 
 class _ZipBundle:
-    def __init__(self, archive: zipfile.ZipFile, prefix: str, names: list[str]) -> None:
+    def __init__(self, archive: zipfile.ZipFile, prefix: str, names: list[str], budget: _Budget) -> None:
         self.archive = archive
         self.prefix = prefix
+        self.budget = budget
         self.names = [name[len(prefix) :] for name in names if name.startswith(prefix)]
 
     def read(self, relative: str, cap: int) -> bytes | None:
@@ -189,6 +215,7 @@ class _ZipBundle:
         reason = _entry_too_large(info, cap)
         if reason:
             raise ScanLimitError(reason)
+        self.budget.charge(info.file_size)
         with self.archive.open(info, "r") as handle:
             payload = handle.read(cap + 1)
         if len(payload) > cap:
@@ -200,9 +227,10 @@ class _ZipBundle:
 
 
 class _DirBundle:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, budget: _Budget) -> None:
         self.root = root
-        self.names = _dir_names(root)
+        self.budget = budget
+        self.names = _dir_names(root, budget)
 
     def read(self, relative: str, cap: int) -> bytes | None:
         path = _resolve_inside(self.root, relative)
@@ -211,6 +239,7 @@ class _DirBundle:
         size = path.stat().st_size
         if size > cap:
             raise ScanLimitError(f"{relative} uncompressed size {size} exceeds {cap} bytes")
+        self.budget.charge(size)
         return path.read_bytes()
 
     def frameworks(self) -> list[str]:
@@ -246,6 +275,8 @@ def _zip_prefix(names: list[str]) -> str:
 def _read_profile(bundle: _ZipBundle | _DirBundle, notes: list[str]) -> tuple[dict | None, str, int | None]:
     try:
         blob = bundle.read("embedded.mobileprovision", _PROFILE_CAP)
+    except ScanBudgetError:
+        raise
     except ScanLimitError:
         notes.append("embedded.mobileprovision exceeds the scan budget and was not parsed")
         return None, "unparsed", None
@@ -264,11 +295,17 @@ def _read_profile(bundle: _ZipBundle | _DirBundle, notes: list[str]) -> tuple[di
 
 
 def _read_xcent(bundle: _ZipBundle | _DirBundle) -> dict | None:
+    seen = 0
     for name in bundle.names:
         if not name.endswith(".xcent") or not _safe_relative(name):
             continue
+        seen += 1
+        if seen > _MAX_XCENT_FILES:
+            break
         try:
             blob = bundle.read(name, _PROFILE_CAP)
+        except ScanBudgetError:
+            raise
         except ScanLimitError:
             return None
         parsed = _plist_in_blob(blob or b"")
@@ -298,6 +335,8 @@ def _read_binary(
         return None, b""
     try:
         payload = bundle.read(executable_name, MAX_DEX_BYTES)
+    except ScanBudgetError:
+        raise
     except ScanLimitError:
         notes.append("main executable exceeds the scan budget; Mach-O checks were skipped")
         return BinaryView(executable_name, False, None, None, None, None, None, "not-run"), b""
@@ -489,12 +528,15 @@ def _api_paths(texts: list[str]) -> tuple[list[str], bool]:
     return found, False
 
 
-def _dir_names(root: Path) -> list[str]:
+def _dir_names(root: Path, budget: _Budget) -> list[str]:
     names: list[str] = []
     resolved = root.resolve()
+    budget.check()
     for path in root.rglob("*"):
         if len(names) >= MAX_ZIP_ENTRIES:
             break
+        if len(names) % 256 == 0:
+            budget.check()
         try:
             relative = path.resolve().relative_to(resolved)
         except (OSError, ValueError):

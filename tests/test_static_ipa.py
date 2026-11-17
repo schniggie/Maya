@@ -6,6 +6,7 @@ import json
 import plistlib
 import struct
 import subprocess
+import time
 import zipfile
 from pathlib import Path
 
@@ -373,6 +374,76 @@ def test_static_ipa_scan_runs_on_the_host(tmp_path: Path, monkeypatch: pytest.Mo
     rejected = __import__("asyncio").run(execute_tool("static_apk_scan", {"apk_path": str(ipa)}, state))
     assert rejected["status"] == "error"
     assert "static_ipa_scan" in rejected["error"]
+
+
+def test_total_byte_budget_fails_the_scan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _hide_otool(monkeypatch)
+    monkeypatch.setattr("maya.static.ipa.MAX_TOTAL_BYTES", 32)
+    ipa = tmp_path / "Wide.ipa"
+    plist = {"CFBundleIdentifier": "com.example.wide", "CFBundleExecutable": "Wide", "MinimumOSVersion": "16.0"}
+    macho = build_macho(pie=True, objc=True, symbols=b"___stack_chk_fail\x00_objc_release")
+    with zipfile.ZipFile(ipa, "w") as archive:
+        archive.writestr("Payload/Wide.app/Info.plist", _plist(plist))
+        archive.writestr("Payload/Wide.app/Wide", macho)
+    report = run_static_ipa_scan(str(ipa))
+    assert report["status"] == "error"
+    assert "scan budget" in report["error"]
+
+
+def test_deadline_fails_the_scan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _hide_otool(monkeypatch)
+    monkeypatch.setattr("maya.static.ipa.SCAN_DEADLINE_SECONDS", -1)
+    ipa = tmp_path / "Late.ipa"
+    plist = {"CFBundleIdentifier": "com.example.late", "CFBundleExecutable": "Late", "MinimumOSVersion": "16.0"}
+    with zipfile.ZipFile(ipa, "w") as archive:
+        archive.writestr("Payload/Late.app/Info.plist", _plist(plist))
+        archive.writestr("Payload/Late.app/Late", build_macho(pie=True))
+    report = run_static_ipa_scan(str(ipa))
+    assert report["status"] == "error"
+    assert "time budget" in report["error"]
+
+
+def test_xcent_reads_stop_before_a_later_large_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _hide_otool(monkeypatch)
+    monkeypatch.setattr("maya.static.ipa.MAX_TOTAL_BYTES", 8_000)
+    ipa = tmp_path / "Groups.ipa"
+    plist = {"CFBundleIdentifier": "com.example.groups", "CFBundleExecutable": "Groups", "MinimumOSVersion": "16.0"}
+    macho = build_macho(pie=True, objc=True, symbols=b"___stack_chk_fail\x00_objc_release")
+    with zipfile.ZipFile(ipa, "w") as archive:
+        base = "Payload/Groups.app/"
+        archive.writestr(base + "Info.plist", _plist(plist))
+        archive.writestr(base + "Groups", macho)
+        for index in range(4):
+            archive.writestr(base + f"note-{index}.xcent", b"not-a-plist")
+        archive.writestr(base + "huge.xcent", b"H" * 100_000)
+    report = run_static_ipa_scan(str(ipa))
+    assert report["status"] == "ok"
+    assert report["package"] == "com.example.groups"
+
+
+def test_many_macho_ranges_stay_inside_a_small_slice() -> None:
+    commands = bytearray()
+    for index in range(200):
+        commands += struct.pack("<IIIIII", LC_SYMTAB, 24, 0, 0, index, 50_000_000)
+        commands += struct.pack("<IIIIII", LC_ENCRYPTION_INFO_64, 24, 0, 50_000_000, 1, 0)
+    header = struct.pack(
+        "<IIIIIIII",
+        MH_MAGIC_64,
+        CPU_ARM64,
+        0,
+        MH_EXECUTE,
+        400,
+        len(commands),
+        MH_DYLDLINK | MH_PIE,
+        0,
+    )
+    blob = header + bytes(commands) + (b"\x00" * 65_536)
+    started = time.perf_counter()
+    facts = inspect_macho(blob)
+    assert time.perf_counter() - started < 2
+    assert facts.parsed is True
+    assert facts.encrypted is True
+    assert facts.stack_canary is None
 
 
 def test_zip_without_a_plist_is_an_error(tmp_path: Path) -> None:

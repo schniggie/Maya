@@ -24,8 +24,8 @@ platform: [ios]
 
 - iOS Keychain is the intended secure storage for credentials
 - Check keychain access group scoping - shared groups allow cross-app access
-- Dump keychain: `objection_run_command("ios keychain dump")`
-- Look for: tokens, passwords, API keys stored with weak protection classes
+- Metadata only: `frida_run_named_script` with `ios/keychain_access` logs class, service, account, access group, and accessibility. It does not copy passwords or key bytes
+- Look for weak accessibility classes (`kSecAttrAccessibleAlways`, `AfterFirstUnlock`) in that metadata
 
 ### Data Protection Classes
 
@@ -65,4 +65,4 @@ platform: [ios]
 - PIE (Position Independent Executable): required for App Store
 - ARC (Automatic Reference Counting): prevents use-after-free class bugs
 - Stack canaries: check with `otool -Iv <binary> | grep stack_chk`
-- Encryption: App Store apps are encrypted, must decrypt before analysis
+- Encryption: App Store binaries are often FairPlay-encrypted. `static_ipa_scan` reads the header, Info.plist, and profile, and reports `cryptid`. It does not decrypt the binary

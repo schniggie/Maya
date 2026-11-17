@@ -27,7 +27,7 @@ MASVS v2 groups used here:
 
 MASVS-PRIVACY is also part of v2. It is summarized at the end. It is not a substitute for a privacy regulation review.
 
-When `static_apk_scan` already emitted a finding, keep its severity and add the control id. Use the rubric for manual findings. `report_vulnerability` requires a `poc` field: write what you inspected and the pass/fail observation, not a payload.
+When `static_apk_scan` or `static_ipa_scan` already emitted a finding, keep its severity and add the control id. The IPA findings already name the control. Use the rubric for manual findings. `report_vulnerability` requires a `poc` field: write what you inspected and the pass/fail observation, not a payload.
 
 Resilience controls are defense in depth. The standard says their absence is not, by itself, a vulnerability. Do not raise a missing obfuscation or root check above low unless some other control actually failed.
 
@@ -47,6 +47,26 @@ Resilience controls are defense in depth. The standard says their absence is not
 | Browsable deep link accepts cleartext HTTP | high | MASVS-PLATFORM-1 and MASVS-NETWORK-1 |
 | Hardcoded Firebase Realtime Database URL | high | MASVS-STORAGE-2 and MASVS-AUTH-1. Confirm whether unauthenticated reads are enabled before you call data exposed |
 | Client-side root or instrumentation checks are present | low | MASVS-RESILIENCE-1. Presence is a signal, not a passed control |
+
+`static_ipa_scan` reads an IPA or `.app` without a device. It does not decrypt FairPlay. Keep these severities.
+
+| Finding | Scanner severity | Controls |
+| --- | --- | --- |
+| App Transport Security allows arbitrary loads | high | MASVS-NETWORK-1 |
+| App Transport Security allows insecure HTTP | high | MASVS-NETWORK-1 |
+| App Transport Security allows a weak TLS version | medium | MASVS-NETWORK-1 |
+| Arbitrary loads in web content or for media | medium | MASVS-NETWORK-1 |
+| App Transport Security allows local networking | info | MASVS-NETWORK-1 |
+| Hardcoded cleartext URL | medium | MASVS-NETWORK-1 |
+| URL scheme allows an insecure protocol | high | MASVS-PLATFORM-1 |
+| Custom URL scheme is registered | low | MASVS-PLATFORM-1 |
+| File sharing is enabled | medium | MASVS-STORAGE-2 |
+| Documents can be opened in place | low | MASVS-STORAGE-2 |
+| Provisioning profile allows a debugger | high | MASVS-RESILIENCE-4. Normal on a development profile. Say which profile you scanned |
+| Missing PIE, stack-canary marker, or ARC marker | low | MASVS-RESILIENCE-2. Marker absence is not a compiler-flag proof |
+| FairPlay encryption is present, or Mach-O protections were not assessed | info | MASVS-RESILIENCE-2. Do not invent the skipped check |
+| Privacy usage description is empty | low | MASVS-PRIVACY-3 |
+| Deployment target is below iOS 13 | low | MASVS-CODE-1 |
 
 Dynamic evidence uses the same ids. `device_dump_app_data` and `objection_enum_storage` support MASVS-STORAGE. Log capture supports MASVS-STORAGE-2. Proxy capture supports MASVS-NETWORK. `analyze_manifest` supports MASVS-PLATFORM and MASVS-CODE. `search_decompiled_code`, `semgrep_scan`, and MobSF support CRYPTO, CODE, and PLATFORM. Flutter engine traffic is judged with `flutter_apps`, not with a Java pinning hook.
 

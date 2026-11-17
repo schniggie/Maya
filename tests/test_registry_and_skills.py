@@ -95,6 +95,24 @@ def test_target_skill_packs_load() -> None:
             assert dep in resolved
 
 
+def test_ios_testing_skill_stays_a_knowledge_pack() -> None:
+    meta = get_skill_frontmatter("ios_testing")
+    assert meta["category"] == "platforms"
+    assert "ios" in meta["platform"]
+    body = load_skills(["ios_testing"], resolve_dependencies=False)["ios_testing"]
+    assert body.startswith("# ")
+    assert "static_ipa_scan" in body
+    assert "MASVS-NETWORK-1" in body
+    assert "ios/keychain_access" in body
+    resolved = resolve_skill_dependencies(["ios_testing"])
+    assert resolved[-1] == "ios_testing"
+    assert "static_analysis" in resolved
+    assert "frida_operations" in resolved
+    lowered = body.lower()
+    for banned in ("clutch", "flexdecrypt", "bfdecrypt", "javascript:alert"):
+        assert banned not in lowered
+
+
 def test_owasp_masvs_names_published_groups() -> None:
     body = load_skills(["owasp_masvs"], resolve_dependencies=False)["owasp_masvs"]
     for group in _MASVS_GROUPS:

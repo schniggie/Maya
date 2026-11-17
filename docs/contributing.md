@@ -189,7 +189,7 @@ Skills are Markdown files with YAML frontmatter. Place them in the correct categ
 | `frameworks/` | Framework-specific | `flutter_analysis.md`, `flutter_apps.md`, `react_native_analysis.md` |
 | `targets/` | Target-focused verification | `fintech_mobile_banking.md` |
 | `standards/` | Control frameworks | `owasp_masvs.md` |
-| `platforms/` | Platform internals | `android_internals.md`, `ios_internals.md` |
+| `platforms/` | Platform internals | `android_internals.md`, `ios_internals.md`, `ios_testing.md` |
 | `agents/` | Agent behavior | `root_orchestrator.md`, `dynamic_tester.md` |
 | `coordination/` | Multi-agent patterns | `delegation_strategy.md`, `context_sharing.md` |
 | `scan_modes/` | Scan depth config | `quick.md`, `comprehensive.md` |
@@ -245,7 +245,7 @@ Pre-built scripts go in `assets/frida-scripts/<category>/`:
 | `enumerate/` | Enumerate app internals (classes, methods, intents) |
 | `exploit/` | Lab observation of WebView, deeplinks, and content providers. Do not add new attack techniques. |
 | `extract/` | Extract data (crypto keys, SharedPreferences, SQLite) |
-| `ios/` | iOS-specific scripts |
+| `ios/` | iOS observation scripts. Original calls stay in place. Do not add a decryption or jailbreak payload |
 
 `frida_generate_hook` writes a validated observation or detection-bypass script into `~/.maya/frida-scripts/<category>/`. The intent fields and the safety policy are in [Frida hook generation](frida-hook-generation.md). Leave generated hooks out of `assets/frida-scripts/`.
 

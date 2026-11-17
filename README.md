@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![CI](https://github.com/schniggie/Maya/actions/workflows/ci.yml/badge.svg)](https://github.com/schniggie/Maya/actions/workflows/ci.yml)
 
-Autonomous security testing agent for mobile apps. Point it at an APK/IPA, provide an LLM API key, and it runs static analysis, dynamic instrumentation, and exploit chaining automatically.
+Autonomous security testing agent for mobile apps. Android has a device-free static scan and a headless emulator path. iOS static analysis reads an unencrypted IPA or `.app` bundle with no device. Dynamic iOS testing needs a device you attach yourself. See [docs/ios.md](docs/ios.md).
 
 > Maintained fork of [C0oki3s/Maya](https://github.com/C0oki3s/Maya). Upstream appears inactive; this repo is the living base for continued work.
 
@@ -37,10 +37,13 @@ export OPENAI_API_KEY="sk-..."
 maya --target com.example.app --package app.apk --device SERIAL
 ```
 
-**iOS:**
+**iOS static scan** (no device, no decryption):
 ```bash
-maya --target com.example.app --package app.ipa --device UDID
+maya --static-only --package app.ipa --output-dir maya_runs/app
+maya --static-only --package Payload/App.app --fail-on high
 ```
+
+A full agent run can take `--package app.ipa`, but dynamic iOS steps are not executed for you. Details: [docs/ios.md](docs/ios.md).
 
 ## Usage
 
@@ -60,7 +63,7 @@ maya --target PACKAGE_NAME --package PATH_TO_APK_OR_IPA [--device SERIAL] [OPTIO
 | `--list-skills` | List loaded skill packs |
 | `--model` | LLM: `openai/gpt-4o`, `anthropic/claude-sonnet-4-20250514`, etc. |
 | `--api-key` | LLM API key (override env var) |
-| `--static-only` | Scan an APK with no LLM, device, or apktool |
+| `--static-only` | Scan an APK, IPA, or `.app` bundle with no LLM or device |
 | `--fail-on none\|low\|medium\|high\|critical` | With `--static-only`, exit 1 at this severity or above (default: `none`) |
 | `--output-dir` | Report directory. `--static-only` writes json, markdown, html, and SARIF |
 | `--emulator` | Boot a headless Android emulator, install the APK, start frida-server, smoke one `enumerate/` script, then tear it down. No LLM |
@@ -87,20 +90,23 @@ maya --list-skills
 
 ### Device-free static scan
 
-`maya --static-only` reads an APK without an LLM, a device, or apktool. It writes `report.json`, `report.md`, `report.html`, and `report.sarif` (SARIF 2.1.0).
+`maya --static-only` reads an APK, an IPA, or an unpacked `.app` directory without an LLM or a device. The APK path also needs no apktool. The IPA path needs no Mac and no `otool`. It writes `report.json`, `report.md`, `report.html`, and `report.sarif` (SARIF 2.1.0).
 
 ```bash
 maya --static-only --package app.apk --output-dir maya_runs/app
 maya --static-only --package app.apk --fail-on high
+maya --static-only --package app.ipa --output-dir maya_runs/app
 ```
 
-`--fail-on` defaults to `none`. Exit `1` when a finding is at or above the threshold, and exit `2` when the APK cannot be scanned.
+`--fail-on` defaults to `none`. Exit `1` when a finding is at or above the threshold, and exit `2` when the package cannot be scanned.
 
-The repo bundles Damn Vulnerable Bank for that path:
+The IPA scan reports ATS exceptions, URL schemes, file sharing, `get-task-allow`, embedded framework names, and Mach-O PIE plus marker checks for a stack canary and ARC. It does not decrypt FairPlay. When `cryptid` is set, or when `otool` and the built-in parser cannot read the executable, the report says those checks were skipped. See [docs/ios.md](docs/ios.md).
+
+The repo bundles Damn Vulnerable Bank for the APK path. IPA coverage is a synthetic bundle built in `tests/test_static_ipa.py`, not a real app.
 
 ```bash
 maya --static-only --package dvba_v1.1.0.apk -n
-pytest -q tests/test_static_scan.py
+pytest -q tests/test_static_scan.py tests/test_static_ipa.py
 ```
 
 Run that scan on every APK from GitHub Actions with [`.github/workflows/maya-static-scan.yml`](.github/workflows/maya-static-scan.yml). The workflow installs Maya from its own commit and uploads `report.sarif`. `security-events: write` belongs on the calling job, which is the only place this repo's CI grants it.

@@ -1,4 +1,4 @@
-"""Fixed budgets for parsing an untrusted APK in the Maya process."""
+"""Fixed budgets for parsing an untrusted APK or IPA in the Maya process."""
 
 from __future__ import annotations
 
@@ -21,4 +21,12 @@ SCAN_DEADLINE_SECONDS = 20
 
 
 class ScanLimitError(ValueError):
-    """The APK asked the scanner to expand past a fixed budget."""
+    """The package asked the scanner to expand past a fixed budget."""
+
+
+class ScanBudgetError(ScanLimitError):
+    """The shared byte or time budget for one scan was exceeded.
+
+    Optional files may skip a per-entry ``ScanLimitError``. This one always
+    fails the scan.
+    """

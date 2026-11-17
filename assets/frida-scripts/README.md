@@ -1,6 +1,6 @@
 # Bundled Frida scripts
 
-These 23 scripts are the catalog behind `frida_list_scripts` and `frida_run_named_script`. They are for authorized testing of an app you control, including the bundled Damn Vulnerable Bank sample. The loader injects one file per call through `frida_run_script`, so each script carries its own copy of the message helper. There is no shared prelude.
+These 28 scripts are the catalog behind `frida_list_scripts` and `frida_run_named_script`. They are for authorized testing of an app you control, including the bundled Damn Vulnerable Bank sample. The loader injects one file per call through `frida_run_script`, so each script carries its own copy of the message helper. There is no shared prelude.
 
 `frida_list_scripts` uses the first `//` line as the description. Keep it in this shape, under 200 characters after the prefix:
 
@@ -45,7 +45,7 @@ Noisy monitors cap `hit` events and then emit one `truncated` hit.
 | `enumerate/` | `loaded_classes`, `class_methods`, `native_exports`, `intent_monitor`, `rasp_detection` | Class, export, and intent inspection. `rasp_detection` reports libraries and probes; it does not disable them. |
 | `extract/` | `crypto_keys`, `shared_preferences`, `sqlite_queries`, `network_requests`, `tls_version_check`, `data_containerization_check` | In-process observation. Values stay in the Frida session and are truncated. |
 | `exploit/` | `webview_rce`, `deeplink_injection`, `content_provider_dump` | Observation of bridges, deeplink parameters, and provider calls the app already makes. They do not inject script, send intents, or issue their own queries. |
-| `ios/` | `nsurlsession_hook`, `data_protection` | NSURLSession metadata and file-protection classes. Requests are not modified and file bytes are not read. |
+| `ios/` | `nsurlsession_hook`, `data_protection`, `keychain_access`, `pasteboard_monitor`, `file_io`, `commoncrypto`, `wkwebview_load` | Observation only. Original calls run unchanged. Keychain values, pasteboard contents, file bytes, and crypto keys are not copied. There is no bundled iOS pinning or jailbreak-detection bypass. |
 
 ## Hooks that do not compose
 

@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import struct
+import subprocess
 import time
 import zipfile
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 import maya.tools  # noqa: F401
@@ -24,7 +26,8 @@ from maya.static.apk import (
 from maya.static.binary_xml import parse_string_pool
 from maya.static.limits import MAX_DEX_BYTES, MAX_RETAINED_API_PATHS, MAX_RETAINED_URLS, ScanLimitError
 from maya.static.rules import build_findings
-from maya.static.scan import run_static_scan
+from maya.static.sarif import artifact_uri, report_to_sarif
+from maya.static.scan import FAIL_ON_LEVELS, run_static_scan, static_scan_exit_code
 from maya.telemetry.tracer import Tracer
 from maya.tools.executor import execute_tool
 from maya.tools.registry import get_tool, should_execute_in_sandbox
@@ -148,6 +151,13 @@ def test_dvba_static_scan_writes_reports_without_apktool(tmp_path: Path) -> None
     assert "com.app.damnvulnerablebank" in html
     assert "<script" not in html.lower()
 
+    sarif = json.loads((out / "report.sarif").read_text(encoding="utf-8"))
+    _assert_sarif_document(sarif, report)
+    assert any(rule["shortDescription"]["text"] == "Application allows cleartext traffic" for rule in _rules(sarif))
+    cleartext = next(rule for rule in _rules(sarif) if "cleartext traffic" in rule["shortDescription"]["text"])
+    assert cleartext["properties"]["security-severity"] == "8.0"
+    assert any(item["level"] == "error" and item["ruleId"] == cleartext["id"] for item in _results(sarif))
+
 
 def test_static_apk_scan_runs_on_the_host_in_strict_mode() -> None:
     assert get_tool("static_apk_scan") is not None
@@ -228,6 +238,208 @@ def test_dex_string_count_is_capped() -> None:
         assert "dex string count" in str(exc)
     else:
         raise AssertionError("expected ScanLimitError")
+
+
+@pytest.mark.parametrize(
+    ("fail_on", "severity", "expected"),
+    [
+        ("none", "critical", 0),
+        ("critical", "critical", 1),
+        ("critical", "high", 0),
+        ("high", "high", 1),
+        ("high", "medium", 0),
+        ("medium", "high", 1),
+        ("low", "low", 1),
+        ("low", "info", 0),
+    ],
+)
+def test_fail_on_threshold(fail_on: str, severity: str, expected: int) -> None:
+    result = {"status": "ok", "findings": [{"severity": severity, "title": "Example"}]}
+    assert static_scan_exit_code(result, fail_on) == expected
+
+
+def test_fail_on_hard_failure_wins_over_findings() -> None:
+    result = {"status": "error", "error": "not a zip APK", "findings": [{"severity": "critical"}]}
+    assert static_scan_exit_code(result, "low") == 2
+    assert static_scan_exit_code({"status": "ok", "findings": []}, "high") == 0
+    assert static_scan_exit_code({"status": "ok"}, "critical") == 0
+    assert static_scan_exit_code({"status": "ok", "findings": [{"severity": "weird"}]}, "low") == 0
+
+
+def test_fail_on_rejects_an_unknown_threshold() -> None:
+    try:
+        static_scan_exit_code({"status": "ok", "findings": []}, "info")
+    except ValueError as exc:
+        assert "fail-on" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_sarif_document_shape() -> None:
+    report = {
+        "scanner": "maya-static",
+        "apk": "app.apk",
+        "package": "com.example.app",
+        "findings": [
+            {
+                "id": "abc123",
+                "title": "Application is debuggable",
+                "severity": "high",
+                "category": "platform",
+                "description": "android:debuggable is true.",
+                "impact": "A debugger can attach.",
+                "poc": "adb shell run-as com.example.app",
+                "remediation": "Set android:debuggable to false.",
+                "evidence": "android:debuggable=true <script>",
+            },
+            {
+                "id": "def456",
+                "title": "Client-side root or instrumentation checks are present",
+                "severity": "low",
+                "category": "resilience",
+                "description": "Native checks run in the app process.",
+                "remediation": "Enforce the decision on the server.",
+                "evidence": "libtool-checker.so",
+            },
+        ],
+    }
+    sarif = report_to_sarif(report)
+    _assert_sarif_document(sarif, report)
+    high = _results(sarif)[0]
+    assert high["level"] == "error"
+    assert high["kind"] == "fail"
+    assert high["partialFingerprints"]["mayaFindingId"] == "abc123"
+    assert "Set android:debuggable to false." in high["message"]["text"]
+    assert "<script>" in high["message"]["text"]
+    assert high["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "app.apk"
+    assert high["locations"][0]["logicalLocations"][0]["name"] == "com.example.app"
+    low = _results(sarif)[1]
+    assert low["level"] == "note"
+    assert _rules(sarif)[1]["properties"]["security-severity"] == "3.0"
+    again = report_to_sarif(report)
+    assert [item["ruleId"] for item in _results(again)] == [item["ruleId"] for item in _results(sarif)]
+
+
+def test_artifact_uri_stays_inside_the_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    nested = tmp_path / "apps" / "demo.apk"
+    nested.parent.mkdir()
+    assert artifact_uri(str(nested)) == "apps/demo.apk"
+    assert artifact_uri(str(tmp_path.parent / "other.apk")) == "other.apk"
+    assert artifact_uri("../escape.apk") == "escape.apk"
+    assert artifact_uri("apps/demo.apk") == "apps/demo.apk"
+    assert ".." not in artifact_uri(str(nested))
+
+
+def test_static_scan_does_not_spawn_a_process(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError(f"static scan spawned a process: {args!r} {kwargs!r}")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "Popen", boom)
+    monkeypatch.setattr(subprocess, "call", boom)
+    monkeypatch.setattr(subprocess, "check_call", boom)
+    monkeypatch.setattr(subprocess, "check_output", boom)
+    result = run_static_scan(str(DVBA_APK), output_dir=str(tmp_path / "out"))
+    assert result["status"] == "ok"
+    assert (tmp_path / "out" / "report.sarif").is_file()
+    assert "apktool" not in json.dumps(result).lower()
+
+
+def test_cli_fail_on_high_exits_1_and_writes_sarif(tmp_path: Path) -> None:
+    out = tmp_path / "run"
+    result = CliRunner().invoke(
+        cli,
+        ["--package", str(DVBA_APK), "--static-only", "--fail-on", "high", "--output-dir", str(out), "-n"],
+    )
+    assert result.exit_code == 1, result.output
+    sarif = json.loads((out / "report.sarif").read_text(encoding="utf-8"))
+    report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    _assert_sarif_document(sarif, report)
+    assert _results(sarif)
+    assert any(item["severity"] in {"high", "critical"} for item in report["findings"])
+    assert (out / "report.md").is_file()
+    assert (out / "report.html").is_file()
+
+
+def test_cli_fail_on_critical_passes_dvba(tmp_path: Path) -> None:
+    out = tmp_path / "run"
+    result = CliRunner().invoke(
+        cli,
+        ["--static-only", "--package", str(DVBA_APK), "--fail-on", "critical", "--output-dir", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        static_scan_exit_code(
+            json.loads((out / "report.json").read_text(encoding="utf-8")),
+            "critical",
+        )
+        == 0
+    )
+
+
+def test_cli_bad_apk_exits_2(tmp_path: Path) -> None:
+    bogus = tmp_path / "notes.apk"
+    bogus.write_bytes(b"this is not a zip")
+    out = tmp_path / "out"
+    result = CliRunner().invoke(
+        cli,
+        ["--static-only", "--package", str(bogus), "--fail-on", "low", "--output-dir", str(out)],
+    )
+    assert result.exit_code == 2
+    assert not (out / "report.sarif").exists()
+
+
+def test_cli_scan_crash_exits_2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def boom(*args: object, **kwargs: object) -> dict:
+        raise RuntimeError("parser blew up")
+
+    monkeypatch.setattr("maya.main.run_static_scan", boom)
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(b"PK")
+    result = CliRunner().invoke(cli, ["--static-only", "--package", str(apk), "--fail-on", "high"])
+    assert result.exit_code == 2
+    assert "parser blew up" in result.output
+
+
+def test_fail_on_without_static_only_is_rejected(tmp_path: Path) -> None:
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(b"PK")
+    result = CliRunner().invoke(cli, ["--package", str(apk), "--fail-on", "high", "-n"])
+    assert result.exit_code != 0
+    assert "static-only" in result.output
+
+
+def test_cli_fail_on_choices_match_the_documented_levels() -> None:
+    param = next(item for item in cli.params if item.name == "fail_on")
+    assert tuple(param.type.choices) == FAIL_ON_LEVELS
+
+
+def _rules(sarif: dict) -> list[dict]:
+    return sarif["runs"][0]["tool"]["driver"]["rules"]
+
+
+def _results(sarif: dict) -> list[dict]:
+    return sarif["runs"][0]["results"]
+
+
+def _assert_sarif_document(sarif: dict, report: dict) -> None:
+    assert sarif["version"] == "2.1.0"
+    assert sarif["$schema"].endswith("sarif-2.1.0.json")
+    assert len(sarif["runs"]) == 1
+    driver = sarif["runs"][0]["tool"]["driver"]
+    assert driver["name"] == "maya-static"
+    rules = {rule["id"]: rule for rule in driver["rules"]}
+    assert len(_results(sarif)) == len(report["findings"])
+    for result, finding in zip(_results(sarif), report["findings"], strict=True):
+        assert result["ruleId"] in rules
+        assert rules[result["ruleId"]]["defaultConfiguration"]["level"] == result["level"]
+        assert result["message"]["text"]
+        uri = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+        assert uri
+        assert not uri.startswith("/")
+        assert ".." not in uri.split("/")
+        assert result["properties"]["severity"] == finding["severity"]
 
 
 def test_cli_static_only_requires_an_apk(tmp_path: Path) -> None:

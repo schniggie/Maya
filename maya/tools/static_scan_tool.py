@@ -13,7 +13,7 @@ def static_apk_scan(apk_path: str, output_dir: str = "") -> dict:
 
     Reads the binary manifest, network security config, dex strings, and native
     libraries. Does not decompile with apktool and does not need a device.
-    Writes report.json, report.md, and report.html when output_dir is set.
+    Writes report.json, report.md, report.html, and report.sarif when output_dir is set.
     """
     try:
         return run_static_scan(apk_path, output_dir=output_dir or None)

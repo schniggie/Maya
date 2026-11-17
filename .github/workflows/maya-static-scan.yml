@@ -1,0 +1,197 @@
+# Device-free static scan of one APK. Call it from an app repo:
+#
+# jobs:
+#   maya:
+#     permissions:
+#       contents: read
+#       actions: write
+#       security-events: write
+#     uses: schniggie/Maya/.github/workflows/maya-static-scan.yml@main
+#     with:
+#       apk_path: app/build/outputs/apk/release/app-release.apk
+#       fail_on: high
+#
+# github.* is the calling repository (the APK lives there).
+# job.workflow_repository and job.workflow_sha are this workflow file's
+# own repository and commit. Maya is installed from that commit.
+# The caller repository is never installed.
+# security-events: write is only on the job that uploads SARIF.
+
+name: Maya static scan
+
+on:
+  workflow_call:
+    inputs:
+      apk_path:
+        description: APK path inside the calling repository
+        required: true
+        type: string
+      fail_on:
+        description: Exit 1 when a finding is at or above this severity (none, low, medium, high, critical)
+        required: false
+        type: string
+        default: none
+      output_dir:
+        description: Workspace-relative directory for report.json, report.md, report.html, and report.sarif
+        required: false
+        type: string
+        default: maya_runs/static-scan
+  workflow_dispatch:
+    inputs:
+      apk_path:
+        description: APK path inside this repository
+        required: true
+        default: dvba_v1.1.0.apk
+        type: string
+      fail_on:
+        description: Exit 1 when a finding is at or above this severity
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - low
+          - medium
+          - high
+          - critical
+      output_dir:
+        description: Workspace-relative directory for the static reports
+        required: true
+        default: maya_runs/static-scan
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Static scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout the calling repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout Maya
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .maya-src
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Maya from this workflow's commit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "./.maya-src"
+
+      - name: Run Maya static scan
+        id: scan
+        env:
+          MAYA_APK: ${{ inputs.apk_path }}
+          MAYA_OUT: ${{ inputs.output_dir }}
+          MAYA_FAIL_ON: ${{ inputs.fail_on }}
+        shell: bash
+        run: |
+          set +e
+          code=0
+          case "$MAYA_FAIL_ON" in
+            none|low|medium|high|critical) ;;
+            *)
+              echo "fail_on must be none, low, medium, high, or critical" >&2
+              code=2
+              ;;
+          esac
+          if [ "$code" -eq 0 ]; then
+            case "$MAYA_OUT" in
+              /*|..|../*|*/..|*/../*)
+                echo "output_dir must be a relative path inside the workspace" >&2
+                code=2
+                ;;
+            esac
+          fi
+          if [ "$code" -eq 0 ]; then
+            maya --static-only --package "$MAYA_APK" --output-dir "$MAYA_OUT" --fail-on "$MAYA_FAIL_ON" -n
+            code=$?
+          fi
+          if [ "$code" -eq 0 ] || [ "$code" -eq 1 ]; then
+            if [ ! -f "$MAYA_OUT/report.sarif" ]; then
+              echo "static scan did not write ${MAYA_OUT}/report.sarif" >&2
+              code=2
+            fi
+          fi
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload reports
+        id: reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maya-static-reports
+          path: ${{ inputs.output_dir }}
+          if-no-files-found: ignore
+
+      - name: Apply scan exit code
+        if: always()
+        env:
+          SCAN_CODE: ${{ steps.scan.outputs.code }}
+          UPLOAD_OUTCOME: ${{ steps.reports.outcome }}
+        run: |
+          case "${SCAN_CODE}" in
+            0|1|2) ;;
+            *)
+              echo "unexpected scan exit: ${SCAN_CODE}" >&2
+              exit 2
+              ;;
+          esac
+          if [ "${SCAN_CODE}" != "0" ]; then
+            exit "${SCAN_CODE}"
+          fi
+          if [ "${UPLOAD_OUTCOME}" != "success" ]; then
+            echo "report upload failed" >&2
+            exit 1
+          fi
+
+  upload-sarif:
+    name: Upload SARIF
+    needs: scan
+    if: ${{ !cancelled() && needs.scan.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Download reports
+        id: reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: maya-static-reports
+          path: sarif-input
+
+      # The scan job is the fail-on gate. Keep going when this repository
+      # has not enabled code scanning; the reports artifact is still there.
+      - name: Upload SARIF
+        if: steps.reports.outcome == 'success' && hashFiles('sarif-input/report.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: sarif-input/report.sarif
+          category: maya-static

@@ -82,6 +82,17 @@ jobs:
       - name: Run DVBA smoke script
         run: python scripts/smoke_dvba_static.py
 
+  maya-static-scan:
+    name: Maya static scan
+    permissions:
+      contents: read
+      actions: write
+      security-events: write
+    uses: ./.github/workflows/maya-static-scan.yml
+    with:
+      apk_path: dvba_v1.1.0.apk
+      fail_on: none
+
   docker-build-test:
     name: Docker Build Test
     runs-on: ubuntu-latest

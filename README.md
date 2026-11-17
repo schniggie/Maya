@@ -60,6 +60,9 @@ maya --target PACKAGE_NAME --package PATH_TO_APK_OR_IPA [--device SERIAL] [OPTIO
 | `--list-skills` | List loaded skill packs |
 | `--model` | LLM: `openai/gpt-4o`, `anthropic/claude-sonnet-4-20250514`, etc. |
 | `--api-key` | LLM API key (override env var) |
+| `--static-only` | Scan an APK with no LLM, device, or apktool |
+| `--fail-on none\|low\|medium\|high\|critical` | With `--static-only`, exit 1 at this severity or above (default: `none`) |
+| `--output-dir` | Report directory. `--static-only` writes json, markdown, html, and SARIF |
 
 ### Examples
 
@@ -79,11 +82,14 @@ maya --list-skills
 
 ### Device-free static scan
 
-`maya --static-only` reads an APK without an LLM, a device, or apktool. It writes `report.json`, `report.md`, and `report.html`.
+`maya --static-only` reads an APK without an LLM, a device, or apktool. It writes `report.json`, `report.md`, `report.html`, and `report.sarif` (SARIF 2.1.0).
 
 ```bash
 maya --static-only --package app.apk --output-dir maya_runs/app
+maya --static-only --package app.apk --fail-on high
 ```
+
+`--fail-on` defaults to `none`. Exit `1` when a finding is at or above the threshold, and exit `2` when the APK cannot be scanned.
 
 The repo bundles Damn Vulnerable Bank for that path:
 
@@ -91,6 +97,23 @@ The repo bundles Damn Vulnerable Bank for that path:
 maya --static-only --package dvba_v1.1.0.apk -n
 pytest -q tests/test_static_scan.py
 ```
+
+Run that scan on every APK from GitHub Actions with [`.github/workflows/maya-static-scan.yml`](.github/workflows/maya-static-scan.yml). The workflow installs Maya from its own commit and uploads `report.sarif`. `security-events: write` belongs on the calling job, which is the only place this repo's CI grants it.
+
+```yaml
+jobs:
+  maya:
+    permissions:
+      contents: read
+      actions: write
+      security-events: write
+    uses: schniggie/Maya/.github/workflows/maya-static-scan.yml@main
+    with:
+      apk_path: app/build/outputs/apk/release/app-release.apk
+      fail_on: high
+```
+
+This repo calls the same workflow on `dvba_v1.1.0.apk` with `fail_on: none`, so the lab APK does not fail CI.
 
 An additional apktool decompile of the same APK is available when you want the decoded tree:
 
@@ -148,6 +171,7 @@ Reports saved to `maya_runs/<package_name>/`:
 report.json       # Machine-readable findings
 report.md         # Human-readable summary
 report.html       # Styled HTML report
+report.sarif      # SARIF 2.1.0 from --static-only
 events.jsonl      # Full telemetry stream
 ```
 

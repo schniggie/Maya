@@ -18,7 +18,7 @@ from maya.decision.broker import get_decision_broker
 from maya.llm import LLMClient, LLMConfig
 from maya.models import ScanConfig
 from maya.skills import list_available_skills_with_sources, set_cli_skills_dir
-from maya.static.scan import run_static_scan
+from maya.static.scan import FAIL_ON_LEVELS, run_static_scan, static_scan_exit_code
 from maya.telemetry import Tracer
 from maya.telemetry.event_bus import Event, EventBus, EventType
 
@@ -50,7 +50,7 @@ def _build_task(target: str, platform: str | None, scan_mode: str) -> str:
     )
 
 
-def _run_static_only(package: str | None, target: str | None, output_dir: str | None) -> None:
+def _run_static_only(package: str | None, target: str | None, output_dir: str | None, fail_on: str) -> None:
     """Scan an APK without an LLM, a device, or apktool, then print where the report landed."""
     if not package:
         raise click.UsageError("Missing option '--package'. Example: maya --static-only -p app.apk")
@@ -58,10 +58,15 @@ def _run_static_only(package: str | None, target: str | None, output_dir: str | 
         raise click.UsageError("--static-only reads an APK. Pass a file ending in .apk.")
     if output_dir is None:
         output_dir = f"maya_runs/{target or Path(package).stem}"
-    result = run_static_scan(package, output_dir=output_dir, target=target)
-    if result.get("error"):
-        click.echo(str(result["error"]), err=True)
-        raise SystemExit(1)
+    try:
+        result = run_static_scan(package, output_dir=output_dir, target=target)
+    except Exception as exc:
+        click.echo(f"static scan failed: {exc}", err=True)
+        raise SystemExit(2) from exc
+    code = static_scan_exit_code(result, fail_on)
+    if code == 2:
+        click.echo(str(result.get("error") or "static scan failed"), err=True)
+        raise SystemExit(2)
     stats = result["stats"]
     click.echo(f"package: {result['package']}")
     click.echo(
@@ -69,7 +74,12 @@ def _run_static_only(package: str | None, target: str | None, output_dir: str | 
         f"{stats['findings']} ({stats['critical']} critical, {stats['high']} high, "
         f"{stats['medium']} medium, {stats['low']} low, {stats['info']} info)"
     )
+    click.echo(f"fail-on: {fail_on}")
     click.echo(f"output: {output_dir}")
+    click.echo(f"sarif: {output_dir}/report.sarif")
+    if code == 1:
+        click.echo(f"fail-on {fail_on}: a finding is at or above the threshold", err=True)
+        raise SystemExit(1)
 
 
 def _is_headless() -> bool:
@@ -94,7 +104,14 @@ def _is_headless() -> bool:
     "--static-only",
     is_flag=True,
     default=False,
-    help="Deterministic APK static analysis. No LLM, device, or apktool.",
+    help="Deterministic APK static analysis. No LLM, device, or apktool. Writes report.sarif.",
+)
+@click.option(
+    "--fail-on",
+    default="none",
+    show_default=True,
+    type=click.Choice(list(FAIL_ON_LEVELS)),
+    help="With --static-only, exit 1 when a finding is at or above this severity. Exit 2 if the scan cannot run.",
 )
 # ── Advanced (hidden from --help) ───────────────────────────
 @click.option(
@@ -102,7 +119,11 @@ def _is_headless() -> bool:
 )
 @click.option("--instruction", default="", hidden=True)
 @click.option("--instruction-file", default=None, hidden=True)
-@click.option("--output-dir", default=None, help="Directory for report.json, report.md, and report.html")
+@click.option(
+    "--output-dir",
+    default=None,
+    help="Directory for the scan reports. --static-only also writes report.sarif.",
+)
 @click.option("--max-agents", default=7, type=int, hidden=True)
 @click.option("--resume", default=None, hidden=True)
 @click.option("--api-base", default=None, hidden=True)
@@ -138,6 +159,7 @@ def cli(
     model: str | None,
     api_key: str | None,
     static_only: bool,
+    fail_on: str,
     scan_mode: str,
     instruction: str,
     instruction_file: str | None,
@@ -168,6 +190,7 @@ def cli(
     Simple usage:
       maya --target com.app.example --package app.apk --device SERIAL
       maya --static-only --package app.apk
+      maya --static-only --package app.apk --fail-on high
       maya --target com.app.example --package app.ipa
     """
 
@@ -207,8 +230,10 @@ def cli(
         target = Path(package).stem
 
     if static_only:
-        _run_static_only(package, target, output_dir)
+        _run_static_only(package, target, output_dir, fail_on)
         return
+    if fail_on != "none":
+        raise click.UsageError("--fail-on applies to --static-only.")
 
     # ── Validate --target is provided for scans ─────────────
     if not target:

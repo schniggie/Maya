@@ -8,10 +8,14 @@ from pathlib import Path
 
 from maya.static.apk import ApkFacts, load_apk
 from maya.static.rules import build_endpoints, build_findings, severity_stats
+from maya.static.sarif import report_to_sarif
+
+FAIL_ON_LEVELS = ("none", "low", "medium", "high", "critical")
+_SEVERITY_RANK = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
 
 def run_static_scan(apk_path: str, output_dir: str | None = None, target: str | None = None) -> dict:
-    """Analyze an APK and, when output_dir is set, write report.json, report.md, and report.html."""
+    """Analyze an APK and, when output_dir is set, write json, markdown, html, and SARIF."""
     path = Path(apk_path)
     if not path.is_file():
         return {"error": f"APK not found: {apk_path}", "status": "error"}
@@ -64,11 +68,34 @@ def _report(
     }
 
 
+def static_scan_exit_code(result: dict, fail_on: str = "none") -> int:
+    """Return 2 when the scan failed, 1 when a finding meets ``fail_on``, else 0.
+
+    ``none`` never fails on findings. A threshold matches that severity and
+    anything more severe. ``info`` is below ``low`` and cannot fail the gate.
+    """
+    if fail_on not in FAIL_ON_LEVELS:
+        raise ValueError(f"fail-on must be one of {', '.join(FAIL_ON_LEVELS)}")
+    if result.get("status") == "error" or result.get("error"):
+        return 2
+    if fail_on == "none":
+        return 0
+    threshold = _SEVERITY_RANK[fail_on]
+    for finding in result.get("findings") or []:
+        if not isinstance(finding, dict):
+            continue
+        rank = _SEVERITY_RANK.get(str(finding.get("severity", "info")).lower(), 0)
+        if rank >= threshold:
+            return 1
+    return 0
+
+
 def _write_reports(output_dir: Path, report: dict) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     (output_dir / "report.md").write_text(_markdown(report), encoding="utf-8")
     (output_dir / "report.html").write_text(_html(report), encoding="utf-8")
+    (output_dir / "report.sarif").write_text(json.dumps(report_to_sarif(report), indent=2) + "\n", encoding="utf-8")
 
 
 def _markdown(report: dict) -> str:

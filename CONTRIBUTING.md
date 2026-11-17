@@ -24,8 +24,8 @@ pip install -e ".[dev]"
 # Default CI unit suite (no device, Frida server, or live LLM)
 pytest -q -m "not integration and not smoke"
 
-# CLI wrapper and agent-decision tests only (mocked subprocess / mocked LLM)
-pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py
+# CLI wrappers, agent decisions, script library, and companion client
+pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py tests/test_frida_script_library.py tests/test_companion_client.py
 
 # DVBA static smoke (requires apktool)
 pytest -q -m smoke

@@ -278,6 +278,8 @@ All tests go in `tests/`. Name them `test_<module>.py`.
 |-----------|--------------|
 | Tools | Call the function, assert it returns a dict with `status` or `error` |
 | CLI wrappers | Mock `subprocess.run` via `maya.tools.proc.run_cli`; assert argv, timeout, missing binary, and parsed stdout |
+| Frida script library | Point the loader at fixture files; assert names, validation errors, and that a named script is passed to `frida_run_script` |
+| Companion client | Mock the HTTP session; assert health-before-use, retry backoff, timeouts, and error dicts |
 | Skills loader | Verify skill files parse correctly, dependencies resolve |
 | Agent loop | Mock LLM responses, verify tool invocation and role routing |
 | LLM config | Verify env/file/CLI precedence |
@@ -289,8 +291,8 @@ All tests go in `tests/`. Name them `test_<module>.py`.
 # Fast unit tests (default CI; no device, Frida server, or live LLM)
 pytest -q -m "not integration and not smoke"
 
-# CLI wrappers and agent decisions only
-pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py
+# CLI wrappers, agent decisions, script library, and companion client
+pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py tests/test_frida_script_library.py tests/test_companion_client.py
 
 # DVBA static smoke (requires apktool + ripgrep)
 pytest -q -m smoke

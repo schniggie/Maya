@@ -366,6 +366,8 @@ assets/frida-scripts/
 
 The agent selects scripts automatically based on the scan context, or you can reference them in custom instructions.
 
+`frida_list_scripts` lists that catalog by name, category, and description. `frida_run_named_script(package_name, name)` loads one readable script and injects it through `frida_run_script`. See the [README](../README.md#frida-script-library) for `MAYA_FRIDA_SCRIPTS` and the companion client's retry settings.
+
 ---
 
 ## Development

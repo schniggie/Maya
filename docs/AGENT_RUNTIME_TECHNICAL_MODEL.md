@@ -183,13 +183,16 @@ Android companion:
 
 Python bridge:
 
-- `device_bridge.companion_app_command(...)` and `drozer_tool.*` send JSON commands to companion endpoint
+- `device_bridge.companion_app_command(...)` and `drozer_tool.*` send JSON commands through `maya.tools.companion_client.CompanionClient`
+- the client checks `GET /health` before `POST /command`, retries connection failures, and returns an error dict when the companion is absent
 
 iOS companion:
 
 - `companion_app/ios/CompanionServer.swift` is currently scaffold-level (returns hints/stub responses)
 
 ### 6.5 Compliance/Automation Layer
+
+`maya/tools/frida_scripts.py` catalogs `assets/frida-scripts/` (or `/opt/maya-assets/frida-scripts` in the sandbox image). `frida_run_named_script` loads one script by name and injects it with `frida_run_script`.
 
 `maya/tools/compliance_tool.py` runs predefined Frida scripts from `assets/frida-scripts/` grouped by:
 

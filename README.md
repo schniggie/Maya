@@ -122,6 +122,25 @@ python scripts/smoke_dvba_static.py   # requires apktool
 pytest -q -m smoke
 ```
 
+### Frida script library
+
+Shipped scripts live in `assets/frida-scripts/<category>/<name>.js`. The loader resolves a name such as `enumerate/loaded_classes` (or a unique file stem), checks that the file stays inside a script root and is readable UTF-8, and injects that one script through the existing `frida_run_script` path.
+
+```python
+from maya.tools.frida_scripts import list_scripts, load_script
+from maya.tools.frida_tool import frida_run_named_script
+
+list_scripts()
+load_script("enumerate/loaded_classes")
+frida_run_named_script("com.example.app", "enumerate/loaded_classes")
+```
+
+`frida_list_scripts` is the same catalog for the agent. `MAYA_FRIDA_SCRIPTS` is an extra directory and overrides a bundled name when both exist. `~/.maya/frida-scripts/` is included when that directory exists and the env var is unset. Inside the sandbox image the bundled copy is `/opt/maya-assets/frida-scripts`.
+
+### Companion client
+
+`companion_app_command` talks to the Android companion over HTTP. `COMPANION_HTTP_URL` defaults to `http://127.0.0.1:9999/command`. The client calls `GET /health` before `POST /command`, retries connection failures with backoff, and returns an error dict when the companion or device is absent. It does not raise. `COMPANION_ATTEMPTS` (1–5, default 3), `COMPANION_CONNECT_TIMEOUT` (default 2 seconds), and `COMPANION_BACKOFF_SECONDS` (default 0.2) tune that behavior. A read timeout on the command itself is returned immediately so the same command is not sent twice. A websocket is used only when `COMPANION_WS_URL` is set, and a websocket failure falls back to HTTP.
+
 ## LLM Configuration
 
 ### Environment Variables
@@ -180,12 +199,12 @@ events.jsonl      # Full telemetry stream
 ```bash
 pip install -e ".[dev]"
 pytest -q -m "not integration and not smoke"   # unit tests, including --static-only on DVBA
-pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py
+pytest -q tests/test_cli_wrappers.py tests/test_agent_decisions.py tests/test_frida_script_library.py tests/test_companion_client.py
 pytest -q -m smoke                             # apktool decompile of DVBA
 ruff check . && ruff format .                  # Lint & format
 ```
 
-`test_cli_wrappers.py` and `test_agent_decisions.py` mock subprocess and the LLM. They are part of the default unit suite (`not integration and not smoke`) and do not need a device, Frida server, or an API key. Device-gated tests stay marked `integration`; the apktool DVBA check stays marked `smoke`.
+`test_cli_wrappers.py` and `test_agent_decisions.py` mock subprocess and the LLM. `test_frida_script_library.py` and `test_companion_client.py` mock the process runner, filesystem, and HTTP session. They are part of the default unit suite (`not integration and not smoke`) and do not need a device, Frida server, or an API key. Device-gated tests stay marked `integration`; the apktool DVBA check stays marked `smoke`.
 
 ## Documentation
 

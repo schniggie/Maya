@@ -3,7 +3,7 @@
   <p align="center"><strong>Autonomous AI-Powered Mobile Security Agent</strong></p>
   <p align="center">
     <a href="https://github.com/schniggie/Maya/actions/workflows/ci.yml"><img src="https://github.com/schniggie/Maya/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <a href="https://github.com/schniggie/Maya/actions/workflows/build-release.yml"><img src="https://github.com/schniggie/Maya/actions/workflows/build-release.yml/badge.svg" alt="Docker"></a>
+    <a href="https://github.com/schniggie/Maya/actions/workflows/release.yml"><img src="https://github.com/schniggie/Maya/actions/workflows/release.yml/badge.svg" alt="Release"></a>
     <a href="https://github.com/schniggie/Maya/pkgs/container/maya"><img src="https://img.shields.io/badge/ghcr.io-maya-blue?logo=docker" alt="GHCR"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
@@ -345,6 +345,8 @@ maya --target com.app --device SERIAL
 docker pull ghcr.io/schniggie/maya:latest
 ```
 
+`latest` and the version tags are published when a `vX.Y.Z` tag is pushed. See [release.md](release.md).
+
 ### Build locally
 
 ```bash
@@ -463,6 +465,7 @@ Full documentation lives in [`docs/`](docs/INDEX.md):
 | [iOS support](docs/ios.md) | Device-free IPA scan and what still needs a device |
 | [Companion App](docs/companion-app.md) | Android & iOS on-device companion setup |
 | [Building & Infrastructure](docs/building-and-infrastructure.md) | Docker, sandbox, host setup |
+| [Releasing](docs/release.md) | Tag a version, publish the GHCR image, open a GitHub Release |
 | [Contributing](docs/contributing.md) | How to contribute tools, skills, and improvements |
 | [Roadmap](docs/ROADMAP.md) | Planned features and future direction |
 

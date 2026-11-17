@@ -24,7 +24,7 @@ docker run --rm -it \
 
 Replace `OPENAI_API_KEY` with your key or use `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, etc.
 
-Image tags are published from this fork on version tags via `.github/workflows/build-release.yml`.
+Image tags are published when a `vX.Y.Z` tag is pushed. See [docs/release.md](docs/release.md). Merging to `main` does not publish.
 
 ### Option 2: Local Installation
 

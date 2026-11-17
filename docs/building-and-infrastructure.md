@@ -98,11 +98,13 @@ docker pull ghcr.io/schniggie/maya:latest
 
 ### Image Tags
 
+Tags are published by [release.md](release.md) when a `vX.Y.Z` git tag is pushed. A merge to `main` does not push an image.
+
 | Tag | Description |
 |-----|-------------|
-| `latest` | Built from `main` branch on every push |
-| `v0.1.0` | Specific release version |
-| `sha-abc1234` | Specific commit |
+| `1.2.3` | Exact image for git tag `v1.2.3` |
+| `1.2` | Newest published `v1.2.Z` |
+| `latest` | Newest published `vX.Y.Z` |
 
 ### Running the Image Standalone
 
@@ -209,7 +211,7 @@ Three workflows are configured:
 
 **`maya-static-scan.yml`** is a reusable workflow. A caller passes `apk_path` and `fail_on`. It installs Maya from the workflow file's own commit, runs `maya --static-only`, and uploads `report.sarif`. `security-events: write` is set only on the upload job.
 
-**`build-release.yml`** runs on `v*` tags and when dispatched by hand. It pushes `ghcr.io/<owner>/maya` and opens a GitHub Release for version tags.
+**`release.yml`** runs when a `vX.Y.Z` tag is pushed. It publishes `ghcr.io/schniggie/maya` (`:X.Y.Z`, `:X.Y`, and `:latest`) and opens a GitHub Release. It does not run on pull requests or branch pushes. A manual dispatch can rebuild an existing tag without opening a Release. See [release.md](release.md).
 
 ---
 

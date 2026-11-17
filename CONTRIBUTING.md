@@ -125,10 +125,13 @@ Maintainers will review within 48 hours. Expect feedback — this is a security 
 
 ## Release Process
 
-Releases are tagged on `main` with semver (`v0.2.0`, `v1.0.0`). Pushing a tag triggers:
-1. CI runs full test suite
-2. Docker image is built and published to `ghcr.io`
-3. GitHub Release is created with auto-generated notes and SBOM
+Tag the commit on `main` and push the tag. That is the only publish step:
+
+```bash
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+Pushing `v1.2.3` publishes `ghcr.io/schniggie/maya:1.2.3`, `:1.2`, and `:latest`, and opens a GitHub Release with auto-generated notes. Merging a pull request does not publish. Details: [docs/release.md](docs/release.md).
 
 ## Questions?
 

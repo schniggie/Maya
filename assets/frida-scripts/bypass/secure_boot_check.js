@@ -1,124 +1,177 @@
-// Secure Boot & Device Integrity Check — verifies TEE, verified boot, device attestation
-// Usage: frida_run_script(package_name="<pkg>", script_code=<this file>)
+// secure_boot_check.js — Read verified-boot properties, patch level, and whether attestation classes are present. Does not fake attestation.
+// category: bypass
+// platform: android
+// usage: frida_run_named_script("<package>", "bypass/secure_boot_check")
+// maya-frida-message: { tag, event, data }
+//
+// Inspection only. Hidden SystemProperties access is attempted and reported
+// as "miss" when the platform does not expose it to the app.
+'use strict';
 
-Java.perform(function () {
-  var findings = [];
+var MAYA = (function () {
+  var tag = "secure_boot_check";
 
-  // 1. Check Build properties related to secure boot
-  var Build = Java.use("android.os.Build");
-
-  var buildType = Build.TYPE.value;
-  var buildTags = Build.TAGS.value;
-  var fingerprint = Build.FINGERPRINT.value;
-
-  findings.push({
-    type: "device_integrity",
-    check: "build_properties",
-    build_type: buildType,
-    build_tags: buildTags,
-    fingerprint: fingerprint,
-    trusted: buildType === "user" && buildTags === "release-keys"
-  });
-
-  send({
-    type: "secure_boot_check",
-    target: "Build.properties",
-    build_type: buildType,
-    build_tags: buildTags,
-    is_user_build: buildType === "user",
-    is_release_keys: buildTags === "release-keys"
-  });
-
-  // 2. Check SystemProperties for verified boot state
-  try {
-    var SystemProperties = Java.use("android.os.SystemProperties");
-    var get = SystemProperties.get.overload("java.lang.String", "java.lang.String");
-
-    var verifiedBootState = get.call(null, "ro.boot.verifiedbootstate", "unknown");
-    var verityMode = get.call(null, "ro.boot.veritymode", "unknown");
-    var flashLocked = get.call(null, "ro.boot.flash.locked", "unknown");
-    var secureBootState = get.call(null, "ro.boot.secureboot", "unknown");
-    var debuggable = get.call(null, "ro.debuggable", "unknown");
-    var secure = get.call(null, "ro.secure", "unknown");
-
-    send({
-      type: "secure_boot_check",
-      target: "SystemProperties",
-      verified_boot_state: verifiedBootState,
-      verity_mode: verityMode,
-      flash_locked: flashLocked,
-      secure_boot: secureBootState,
-      debuggable: debuggable,
-      secure: secure,
-      boot_trusted: verifiedBootState === "green" && flashLocked === "1"
-    });
-  } catch (e) {
-    send({ type: "secure_boot_check", target: "SystemProperties", error: e.toString() });
+  function emit(event, data) {
+    var message = { tag: tag, event: event, data: data || {} };
+    send(message);
+    console.log(JSON.stringify(message));
+    return message;
   }
 
-  // 3. Check if KeyStore hardware-backed attestation is available
-  try {
-    var KeyStore = Java.use("java.security.KeyStore");
-    var ks = KeyStore.getInstance("AndroidKeyStore");
-    ks.load(null);
-    send({
-      type: "secure_boot_check",
-      target: "AndroidKeyStore",
-      status: "available",
-      hardware_backed: true
-    });
-  } catch (e) {
-    send({
-      type: "secure_boot_check",
-      target: "AndroidKeyStore",
-      status: "unavailable",
-      error: e.toString()
-    });
+  function fail(hook, error) {
+    var message = error && error.message ? String(error.message) : String(error);
+    return emit("error", { hook: hook, message: message });
   }
 
-  // 4. Monitor SafetyNet/Play Integrity attestation calls
-  try {
-    var SafetyNet = Java.use("com.google.android.gms.safetynet.SafetyNetApi");
-    send({
-      type: "secure_boot_check",
-      target: "SafetyNet",
-      status: "class_found",
-      attestation_available: true
-    });
-  } catch (e) {
-    // SafetyNet not present — check for Play Integrity
+  function guard(hook, fn) {
     try {
-      var IntegrityManager = Java.use("com.google.android.play.core.integrity.IntegrityManager");
-      send({
-        type: "secure_boot_check",
-        target: "PlayIntegrity",
-        status: "class_found",
-        attestation_available: true
-      });
-    } catch (e2) {
-      send({
-        type: "secure_boot_check",
-        target: "DeviceAttestation",
-        status: "no_attestation_api_found",
-        attestation_available: false
-      });
+      return fn();
+    } catch (error) {
+      fail(hook, error);
+      return null;
     }
   }
 
-  // 5. Check if the app verifies device security patch level
-  try {
-    var VERSION = Java.use("android.os.Build$VERSION");
-    var securityPatch = VERSION.SECURITY_PATCH.value;
-    var sdkInt = VERSION.SDK_INT.value;
-    send({
-      type: "secure_boot_check",
-      target: "SecurityPatchLevel",
-      security_patch: securityPatch,
-      sdk_int: sdkInt
-    });
-  } catch (e) {
-    send({ type: "secure_boot_check", target: "SecurityPatchLevel", error: e.toString() });
+  function optional(hook, fn) {
+    try {
+      return fn();
+    } catch (error) {
+      var message = error && error.message ? String(error.message) : String(error);
+      var absent = message.indexOf("ClassNotFound") !== -1
+        || message.indexOf("Didn't find class") !== -1
+        || message.indexOf("not found") !== -1
+        || message.indexOf("has no method") !== -1
+        || message.indexOf("undefined") !== -1;
+      if (absent) emit("miss", { hook: hook, message: message });
+      else fail(hook, error);
+      return null;
+    }
   }
 
-  send({ type: "secure_boot_check_complete", status: "all checks done" });
-});
+  function text(value, limit) {
+    if (value === null || value === undefined) return null;
+    var rendered = String(value);
+    var cap = limit || 240;
+    if (rendered.length <= cap) return rendered;
+    return rendered.slice(0, cap) + "...";
+  }
+
+  function callOriginal(method, receiver, args) {
+    var count = args.length;
+    if (count === 0) return method.call(receiver);
+    if (count === 1) return method.call(receiver, args[0]);
+    if (count === 2) return method.call(receiver, args[0], args[1]);
+    if (count === 3) return method.call(receiver, args[0], args[1], args[2]);
+    if (count === 4) return method.call(receiver, args[0], args[1], args[2], args[3]);
+    if (count === 5) return method.call(receiver, args[0], args[1], args[2], args[3], args[4]);
+    if (count === 6) return method.call(receiver, args[0], args[1], args[2], args[3], args[4], args[5]);
+    if (count === 7) return method.call(receiver, args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+    if (count === 8) return method.call(receiver, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
+    fail("callOriginal", "unsupported arity " + count);
+    return null;
+  }
+
+  return {
+    emit: emit,
+    fail: fail,
+    guard: guard,
+    optional: optional,
+    text: text,
+    callOriginal: callOriginal
+  };
+})();
+
+var BOOT_KEYS = [
+  "ro.boot.verifiedbootstate",
+  "ro.boot.veritymode",
+  "ro.boot.flash.locked",
+  "ro.boot.vbmeta.device_state",
+  "ro.boot.secureboot",
+  "ro.secure",
+  "ro.debuggable",
+  "ro.build.type",
+  "ro.build.tags"
+];
+
+function readProperties() {
+  MAYA.optional("android.os.SystemProperties.get", function () {
+    var SystemProperties = Java.use("android.os.SystemProperties");
+    var get = SystemProperties.get.overload("java.lang.String", "java.lang.String");
+    var values = {};
+    BOOT_KEYS.forEach(function (key) {
+      try {
+        values[key] = String(get.call(SystemProperties, key, "unknown"));
+      } catch (error) {
+        values[key] = "unreadable";
+        MAYA.fail("SystemProperties.get", error);
+      }
+    });
+    var state = values["ro.boot.verifiedbootstate"];
+    MAYA.emit("hit", {
+      hook: "SystemProperties",
+      properties: values,
+      verified_boot_green: state === "green",
+      release_keys: values["ro.build.tags"] === "release-keys"
+    });
+  });
+}
+
+function readBuild() {
+  MAYA.guard("android.os.Build", function () {
+    var Build = Java.use("android.os.Build");
+    var Version = Java.use("android.os.Build$VERSION");
+    MAYA.emit("hit", {
+      hook: "Build",
+      type: String(Build.TYPE.value),
+      tags: String(Build.TAGS.value),
+      fingerprint: MAYA.text(Build.FINGERPRINT.value, 180),
+      security_patch: Version.SECURITY_PATCH ? String(Version.SECURITY_PATCH.value) : null,
+      sdk_int: Version.SDK_INT.value
+    });
+  });
+}
+
+function readKeyStore() {
+  MAYA.guard("AndroidKeyStore", function () {
+    var KeyStore = Java.use("java.security.KeyStore");
+    var keyStore = KeyStore.getInstance("AndroidKeyStore");
+    keyStore.load(null);
+    MAYA.emit("hit", { hook: "AndroidKeyStore", available: true });
+  });
+}
+
+function readAttestationClasses() {
+  var classes = [
+    "com.google.android.gms.safetynet.SafetyNetClient",
+    "com.google.android.gms.safetynet.SafetyNetApi",
+    "com.google.android.play.core.integrity.IntegrityManager",
+    "com.google.android.play.core.integrity.IntegrityManagerFactory"
+  ];
+  var present = [];
+  classes.forEach(function (name) {
+    try {
+      Java.use(name);
+      present.push(name);
+      MAYA.emit("hit", { hook: "attestation_class", class: name, present: true });
+    } catch (error) {
+      MAYA.emit("miss", { hook: "attestation_class", class: name });
+    }
+  });
+  MAYA.emit("done", { hook: "attestation_class", present: present, fakes_attestation: false });
+}
+
+if (!Java.available) {
+  MAYA.emit("error", { hook: "Java", message: "Java runtime is not available" });
+} else {
+  Java.perform(function () {
+    try {
+      readBuild();
+      readProperties();
+      readKeyStore();
+      readAttestationClasses();
+      MAYA.emit("ready", { script: "secure_boot_check" });
+    } catch (error) {
+      MAYA.fail("main", error);
+    }
+  });
+}

@@ -2,8 +2,8 @@
 name: frida_operations
 description: Frida runtime instrumentation operations, prerequisites, and troubleshooting
 category: tools
-version: "2.0"
-last_updated: "2026-03-26"
+version: "2.1"
+last_updated: "2026-11-17"
 frida_version_tested: "16.5.x"
 applies_to: [dynamic, api, exploit]
 platform: [android, ios]
@@ -49,12 +49,13 @@ Before ANY Frida tool call, verify the following:
 3. Check stdout for hook output (messages sent via `send()`)
 
 ### SSL Pinning Bypass
-1. `file_read(path="~/.maya/frida-scripts/bypass/ssl_pinning_universal.js")`
-2. `frida_run_script(package_name="com.target", script=<contents>)`
-3. Verify: check for "bypass" messages in output, then confirm traffic appears in Caido
+1. `frida_run_named_script(package_name="com.target", name="bypass/ssl_pinning_universal")`
+2. For a Flutter app, also run `bypass/ssl_pinning_flutter` in its own injection.
+3. Read stdout as JSON lines `{ tag, event, data }`. `hook` means a stack was installed, `miss` means that class or export is absent, `hit` means a pin check was neutralized.
+4. Confirm traffic in Caido only after a `ready` event.
 
 ### Combining Multiple Hooks
-Read multiple scripts via `file_read`, concatenate the JavaScript, pass to a single `frida_run_script` call. This ensures all hooks share one Frida session.
+Prefer separate `frida_run_named_script` calls. Concatenate sources only when the scripts do not replace the same Java method (`root_detection_universal` and `emulator_detection` both hook `File.exists`). Each bundled script already contains its own message helper.
 
 ## Platform Differences
 

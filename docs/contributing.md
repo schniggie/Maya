@@ -243,28 +243,53 @@ Pre-built scripts go in `assets/frida-scripts/<category>/`:
 |----------|---------|
 | `bypass/` | Bypass security controls (root detection, SSL pinning, etc.) |
 | `enumerate/` | Enumerate app internals (classes, methods, intents) |
-| `exploit/` | Exploit vulnerabilities (WebView RCE, deeplink injection) |
+| `exploit/` | Lab observation of WebView, deeplinks, and content providers. Do not add new attack techniques. |
 | `extract/` | Extract data (crypto keys, SharedPreferences, SQLite) |
 | `ios/` | iOS-specific scripts |
 
 ### Script Template
 
+Copy the `MAYA` helper from an existing script in `assets/frida-scripts/`. `frida_run_script` injects one file, so the helper has to live in that file. Keep the first line as `// <stem>.js — <description>` so `frida_list_scripts` can show it. Full rules are in [assets/frida-scripts/README.md](../assets/frida-scripts/README.md).
+
 ```javascript
-// assets/frida-scripts/extract/my_extractor.js
+// my_extractor.js — Observe one app method and report it. Does not change the return value.
+// category: extract
+// platform: android
+// usage: frida_run_named_script("<package>", "extract/my_extractor")
+// maya-frida-message: { tag, event, data }
 'use strict';
 
-Java.perform(function() {
-    // Hook target class
-    var TargetClass = Java.use('com.example.TargetClass');
+var MAYA = (function () {
+  var tag = "my_extractor";
+  function emit(event, data) {
+    var message = { tag: tag, event: event, data: data || {} };
+    send(message);
+    console.log(JSON.stringify(message));
+    return message;
+  }
+  return { emit: emit };
+})();
 
-    TargetClass.sensitiveMethod.implementation = function(arg) {
-        console.log('[*] sensitiveMethod called with: ' + arg);
-        var result = this.sensitiveMethod(arg);
-        console.log('[*] Result: ' + result);
-        return result;
-    };
-});
+if (!Java.available) {
+  MAYA.emit("error", { hook: "Java", message: "Java runtime is not available" });
+} else {
+  Java.perform(function () {
+    try {
+      var Target = Java.use("com.example.Target");
+      var method = Target.sensitiveMethod.overload("java.lang.String");
+      method.implementation = function (arg) {
+        MAYA.emit("hit", { hook: "Target.sensitiveMethod", arg: String(arg) });
+        return method.call(this, arg);
+      };
+      MAYA.emit("ready", { script: "my_extractor" });
+    } catch (error) {
+      MAYA.emit("miss", { hook: "com.example.Target", message: String(error) });
+    }
+  });
+}
 ```
+
+Call the saved overload with `.call`. Calling `this.sensitiveMethod(...)` from inside the hook recurses. A missing class should emit `miss` or `error` and leave the session up. Do not concatenate two scripts that hook the same Java method; the later replacement wins.
 
 ---
 

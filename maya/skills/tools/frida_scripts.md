@@ -2,8 +2,8 @@
 name: frida_scripts
 description: Pre-built Frida script library - when and how to use each module
 category: tools
-version: "1.0"
-last_updated: "2026-03-26"
+version: "1.1"
+last_updated: "2026-11-17"
 applies_to: [dynamic, bypass, extract, exploit]
 ---
 
@@ -11,73 +11,85 @@ applies_to: [dynamic, bypass, extract, exploit]
 
 ## Overview
 
-Pre-built Frida scripts are stored as `.js` asset files in `~/.maya/frida-scripts/` (or `assets/frida-scripts/` in the project). To use a script:
-1. `frida_list_scripts` to see names, categories, and descriptions
-2. `frida_run_named_script(package_name="...", name="enumerate/loaded_classes")` to load one readable script and inject it
+The 23 bundled scripts live in `assets/frida-scripts/<category>/<name>.js`. The sandbox image copies them to `/opt/maya-assets/frida-scripts`. A user directory at `~/.maya/frida-scripts/` is included when it exists, and `MAYA_FRIDA_SCRIPTS` replaces that extra directory.
 
-`frida_load_script(name)` returns the source, or an error dict when the name is unknown, ambiguous, or unreadable. `file_read` plus `frida_run_script` still works when you already have the source.
+1. `frida_list_scripts` returns name, category, and the first `//` description. It does not return source.
+2. `frida_run_named_script(package_name="...", name="enumerate/loaded_classes")` loads one readable script and injects it with `frida_run_script`.
+3. `frida_load_script(name)` returns the source, or an error dict when the name is unknown, ambiguous, or unreadable.
 
-## When to Compose vs Use Single Module
+Each script is self-contained. The loader does not prepend a shared runtime. Results use `send({ tag, event, data })` and the same JSON object on stdout:
 
-- **Single module**: Use for focused tasks - e.g., just bypass SSL pinning
-- **Composed script**: Use `file_read` on each script, concatenate the JS code, then pass to `frida_run_script`. Common compositions:
-  - `ssl_pinning_universal + root_detection_universal` - standard bypass combo
-  - `ssl_pinning_flutter + root_detection_universal` - for Flutter apps
-  - `crypto_keys + network_requests` - capture keys and traffic together
-  - `sqlite_queries + shared_preferences` - full data access monitoring  - `secure_boot_check + root_detection_universal + emulator_detection` - full device integrity assessment
-  - `crypto_keys + tls_version_check + data_containerization_check` - full encryption compliance audit
-  - `rasp_detection + debug_detection + integrity_check` - complete code protection assessment
+| Field | Meaning |
+| --- | --- |
+| `tag` | Script stem, such as `ssl_pinning_universal` |
+| `event` | `ready`, `hook`, `hit`, `miss`, `error`, or `done` |
+| `data` | Plain object for that event |
+
+`miss` means an optional class or export is absent and the rest of the script kept going. Parse stdout as one JSON object per line. Details and the per-script constants (`TARGET_CLASS`, `FILTER`, `LIB_NAME`) are in `assets/frida-scripts/README.md`.
+
+## One script per session when hooks overlap
+
+`frida_run_named_script` injects a single file. Concatenate sources only when the scripts do not replace the same Java method. A later `implementation` replaces the earlier one. Do not combine `root_detection_universal` with `emulator_detection` (both hook `File.exists`), or `network_requests` with `tls_version_check` (both hook `URL.openConnection`). `ssl_pinning_universal` and `root_detection_universal` touch different methods and can be concatenated. Each file closes over its own `tag`.
+
 ## Module Categories
 
+Scripts that are not in this list are not in the catalog. Do not call `frida_load_script` for a name that is not listed.
+
 ### Bypass Modules
+
 | Module | When to Use |
-|--------|------------|
-| `ssl_pinning_universal` | Default first choice for SSL bypass. Covers OkHttp, TrustManager, WebView |
-| `ssl_pinning_flutter` | Only for Flutter/Dart apps (detected via `framework_detect`) |
-| `root_detection_universal` | When app detects root/jailbreak and exits or restricts features |
-| `emulator_detection` | When app detects emulator environment |
-| `debug_detection` | When app has anti-debug protection |
-| `integrity_check` | When app verifies its own signature/checksum |
-| `secure_boot_check` | To verify device trust properties, verified boot state, and attestation APIs |
+| --- | --- |
+| `ssl_pinning_universal` | Android TLS pinning. Hooks OkHttp3 `CertificatePinner`, `X509TrustManager` via `SSLContext.init`, Conscrypt trust checks, and WebView SSL errors when those classes exist. |
+| `ssl_pinning_flutter` | Flutter/BoringSSL only. Hooks `SSL_CTX_set_custom_verify` in `libflutter.so` if the export exists. Pair with the universal script for Java pins. |
+| `root_detection_universal` | App checks `su` paths, `su`/`magisk` commands, `Build.TAGS`, RootBeer, or known root packages. |
+| `emulator_detection` | App checks Build properties, qemu system properties, telephony identifiers, or emulator device files. Telephony values are synthetic lab fixtures. |
+| `debug_detection` | App checks `Debug.isDebuggerConnected`, `FLAG_DEBUGGABLE`, `ptrace(PTRACE_TRACEME)`, or `TracerPid`. |
+| `integrity_check` | Report signature lookups and digest algorithms. Does not forge signatures or replace digest output. |
+| `secure_boot_check` | Read verified-boot properties, patch level, and whether SafetyNet or Play Integrity classes are present. Does not fake attestation. |
 
 ### Extract Modules
+
 | Module | When to Use |
-|--------|------------|
-| `crypto_keys` | To capture encryption keys at runtime (AES, RSA, etc.) |
-| `shared_preferences` | To monitor preference reads/writes (tokens, config) |
-| `sqlite_queries` | To intercept all SQLite operations |
-| `network_requests` | To capture HTTP requests before encryption |
-| `jwt_tokens` | To intercept JWT creation/validation |
-| `biometric_callbacks` | To monitor/bypass biometric auth |
-| `clipboard_monitor` | To detect sensitive data in clipboard |
-| `tls_version_check` | To capture negotiated TLS versions and cipher suites on all connections |
-| `data_containerization_check` | To verify app sandbox isolation, storage permissions, and data leakage |
+| --- | --- |
+| `crypto_keys` | Observe `Cipher`, `SecretKeySpec`, and `Mac` key material in the local Frida session. Non-exportable keys are reported as `exportable: false`. |
+| `shared_preferences` | Observe preference reads and writes. Values are truncated. |
+| `sqlite_queries` | Observe SQL text for query, exec, insert, update, and delete. |
+| `network_requests` | Observe OkHttp and `URLConnection` method and URL. Bodies and headers are not recorded. |
+| `tls_version_check` | Report negotiated TLS versions, enabled protocols, and cleartext `http://` URLs. |
+| `data_containerization_check` | Report sandbox paths, world-readable preference modes, and writes outside `/data/data` or `/data/user`. |
 
 ### Enumerate Modules
+
 | Module | When to Use |
-|--------|------------|
-| `loaded_classes` | To discover app's class structure at runtime |
-| `class_methods` | To enumerate methods of a specific class |
-| `native_exports` | To discover native library functions |
-| `intent_monitor` | To capture all Intent traffic |
-| `rasp_detection` | To detect RASP libraries, obfuscation level, anti-hooking, and Frida detection |
+| --- | --- |
+| `loaded_classes` | List loaded Java classes in batches. Set `FILTER` to a package substring, or leave it empty. |
+| `class_methods` | List methods of one class. Set `TARGET_CLASS` before injecting. `REPLACE_ME` returns an error event. |
+| `native_exports` | Summarize app native modules. Set `LIB_NAME` to include export names. |
+| `intent_monitor` | Observe activity, broadcast, and service intents the app sends. Does not forge intents. |
+| `rasp_detection` | Report known RASP or packer classes, anti-instrumentation commands, and a short-name ratio. Does not disable RASP. |
 
 ### Exploit Modules
+
+These stay observation scripts for an authorized lab app. Do not treat them as remote exploit executors.
+
 | Module | When to Use |
-|--------|------------|
-| `webview_rce` | To test JavaScript bridge vulnerabilities |
-| `deeplink_injection` | To test deeplink handler security |
-| `content_provider_dump` | To extract data from content providers |
+| --- | --- |
+| `webview_rce` | Report JavaScript interfaces and risky WebView settings. Does not inject script or call `loadUrl`. |
+| `deeplink_injection` | Report deeplink URIs and query parameters the app reads, and flag redirect-like keys. Does not send intents. |
+| `content_provider_dump` | Report provider queries and writes the app already performs, including column names and row counts. Does not query providers itself or read row values. |
 
-## Custom Scripts Directory
+### iOS Modules
 
-Place custom `.js` files in `~/.maya/frida-scripts/` to make them available. Name the file to match the module name. Use `file_read` to load and `frida_run_script` to execute.
+| Module | When to Use |
+| --- | --- |
+| `nsurlsession_hook` | Observe `NSURLSession` data-task URL, method, and headers. Requires `ObjC.available`. |
+| `data_protection` | Report the file-protection class on `NSFileManager` creates and `NSData` writes. |
 
 ## Decision Flow
 
-1. Run `framework_detect` to identify the app framework
-2. Run `protection_detect` to identify active protections
-3. Select bypass modules based on detected protections
-4. Compose a single script with all needed bypasses
-5. Attach and run the composed script
-6. Layer extraction modules based on test objectives
+1. Run `framework_detect` to identify the app framework.
+2. Run `protection_detect` to identify active protections.
+3. Pick one bypass module that matches the protection. Use `ssl_pinning_flutter` only when the app is Flutter, and still load `ssl_pinning_universal` in a separate injection if Java pins are present.
+4. Read `ready`, `hook`, and `miss` events before deciding the bypass installed.
+5. Add one enumerate or extract module in its own injection for the test objective.
+6. For `exploit/` names, record the observation. Do not extend those scripts into an injection or query tool during the run.

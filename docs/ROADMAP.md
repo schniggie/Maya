@@ -6,11 +6,23 @@
 
 ## Current Status
 
-Maya has a functional multi-agent framework with a large tool surface, a skill system, Docker sandbox execution, and an Android companion app. `maya --static-only` is the device-free APK path covered in CI. `maya --emulator` boots a headless AVD for the dynamic path when no phone is attached. The Frida script catalog, the companion HTTP client, and the emulator helpers have device-free unit tests. See [AGENT_RUNTIME_TECHNICAL_MODEL.md](AGENT_RUNTIME_TECHNICAL_MODEL.md) for how the runtime works today.
+Maya has a functional multi-agent framework with a large tool surface, a skill system, Docker sandbox execution, and an Android companion app. `maya --static-only` is the device-free APK and IPA path covered by unit tests (the reusable CI workflow still scans the bundled APK). `maya --emulator` boots a headless Android AVD. It does not boot an iOS Simulator. The Frida script catalog, the companion HTTP client, and the emulator helpers have device-free unit tests. iOS dynamic testing and the iOS companion remain manual. See [ios.md](ios.md) and [AGENT_RUNTIME_TECHNICAL_MODEL.md](AGENT_RUNTIME_TECHNICAL_MODEL.md).
 
 ---
 
 ## Planned Features
+
+### iOS static analysis and observation scripts
+**Priority**: High
+
+Device-free inspection is in place. Dynamic iOS coverage is not.
+
+- [x] `maya --static-only` reads an `.ipa` or an unpacked `.app` and writes the same four reports as an APK
+- [x] ATS, URL schemes, file sharing, `get-task-allow`, framework names, and Mach-O PIE / marker checks, with an explicit skip when the binary is encrypted or unparsed
+- [x] Observation-only `ios/` Frida scripts for keychain metadata, pasteboard length, file paths, CommonCrypto metadata, and WKWebView loads
+- [ ] Bundled iOS TLS-pinning or jailbreak-detection bypass (not shipped; Android `bypass/` is unchanged)
+- [ ] iOS Simulator or any headless dynamic path
+- [ ] FairPlay decryption (not in scope)
 
 ### iOS Companion — Full Implementation
 **Priority**: High

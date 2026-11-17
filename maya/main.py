@@ -18,7 +18,7 @@ from maya.decision.broker import get_decision_broker
 from maya.llm import LLMClient, LLMConfig
 from maya.models import ScanConfig
 from maya.skills import list_available_skills_with_sources, set_cli_skills_dir
-from maya.static.scan import FAIL_ON_LEVELS, run_static_scan, static_scan_exit_code
+from maya.static.scan import FAIL_ON_LEVELS, run_static_ipa_scan, run_static_scan, static_scan_exit_code
 from maya.telemetry import Tracer
 from maya.telemetry.event_bus import Event, EventBus, EventType
 
@@ -30,11 +30,23 @@ def _detect_platform(package_path: str | None) -> str | None:
     """Infer platform from binary file extension."""
     if not package_path:
         return None
-    ext = Path(package_path).suffix.lower()
+    path = Path(package_path)
+    ext = path.suffix.lower()
     if ext == ".apk":
         return "android"
-    if ext == ".ipa":
+    if ext == ".ipa" or (ext == ".app" and path.is_dir()):
         return "ios"
+    return None
+
+
+def _static_input_kind(package: str) -> str | None:
+    """Return ``apk`` or ``ipa`` when ``--static-only`` can read this path."""
+    path = Path(package)
+    suffix = path.suffix.lower()
+    if suffix == ".apk":
+        return "apk"
+    if suffix == ".ipa" or (suffix == ".app" and path.is_dir()):
+        return "ipa"
     return None
 
 
@@ -51,15 +63,19 @@ def _build_task(target: str, platform: str | None, scan_mode: str) -> str:
 
 
 def _run_static_only(package: str | None, target: str | None, output_dir: str | None, fail_on: str) -> None:
-    """Scan an APK without an LLM, a device, or apktool, then print where the report landed."""
+    """Scan an APK, IPA, or .app bundle without an LLM or a device."""
     if not package:
         raise click.UsageError("Missing option '--package'. Example: maya --static-only -p app.apk")
-    if _detect_platform(package) != "android":
-        raise click.UsageError("--static-only reads an APK. Pass a file ending in .apk.")
+    kind = _static_input_kind(package)
+    if kind is None:
+        raise click.UsageError("--static-only reads an APK (.apk), an IPA (.ipa), or an .app bundle directory.")
     if output_dir is None:
         output_dir = f"maya_runs/{target or Path(package).stem}"
     try:
-        result = run_static_scan(package, output_dir=output_dir, target=target)
+        if kind == "ipa":
+            result = run_static_ipa_scan(package, output_dir=output_dir, target=target)
+        else:
+            result = run_static_scan(package, output_dir=output_dir, target=target)
     except Exception as exc:
         click.echo(f"static scan failed: {exc}", err=True)
         raise SystemExit(2) from exc
@@ -160,7 +176,7 @@ def _is_headless() -> bool:
     "--static-only",
     is_flag=True,
     default=False,
-    help="Deterministic APK static analysis. No LLM, device, or apktool. Writes report.sarif.",
+    help="Deterministic APK or IPA static analysis. No LLM or device. Writes report.sarif.",
 )
 @click.option(
     "--fail-on",
@@ -288,6 +304,7 @@ def cli(
     Simple usage:
       maya --target com.app.example --package app.apk --device SERIAL
       maya --static-only --package app.apk
+      maya --static-only --package app.ipa
       maya --static-only --package app.apk --fail-on high
       maya --emulator --package dvba_v1.1.0.apk
       maya --target com.app.example --package app.ipa

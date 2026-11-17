@@ -159,8 +159,8 @@ maya --emulator --package dvba_v1.1.0.apk
 # Android — full comprehensive scan
 maya --target com.example.app --package app.apk --device DEVICE_SERIAL
 
-# iOS
-maya --target com.example.app --package app.ipa --device UDID
+# iOS static scan. No device. Does not decrypt an App Store IPA.
+maya --static-only --package app.ipa --output-dir maya_runs/app
 
 # Quick scan
 maya --target com.example.app --package app.apk --device SERIAL --scan-mode quick
@@ -200,7 +200,7 @@ Core options:
   -n, --non-interactive      Force headless mode
   --model TEXT               LiteLLM model string (e.g. openai/gpt-4o)
   --api-key TEXT             LLM API key
-  --static-only              APK static scan. No LLM, device, or apktool
+  --static-only              APK, IPA, or .app static scan. No LLM or device
   --fail-on [none|low|medium|high|critical]
                              With --static-only, exit 1 at this severity or above
   --emulator                 Headless AVD dynamic smoke. No LLM. Separate from --static-only
@@ -287,7 +287,7 @@ maya/skills/
 ├── frameworks/          # App frameworks — flutter_analysis, flutter_apps, react_native, xamarin
 ├── targets/             # Target playbooks — fintech_mobile_banking
 ├── standards/           # Control mapping — owasp_masvs
-├── platforms/           # Platform internals — android_internals, ios_internals
+├── platforms/           # Platform internals — android_internals, ios_internals, ios_testing
 ├── agents/              # Agent behavior — root_orchestrator, static_analyzer, dynamic_tester
 ├── coordination/        # Multi-agent — delegation_strategy, context_sharing
 └── scan_modes/          # Scan depth configuration
@@ -369,7 +369,7 @@ The sandbox image is based on **Kali Linux** and bundles: Python 3, Node.js, Go,
 
 ## Frida Scripts
 
-Maya ships with **23 pre-built Frida scripts** organized by purpose:
+Maya ships with **28 pre-built Frida scripts** organized by purpose:
 
 ```
 assets/frida-scripts/
@@ -379,7 +379,8 @@ assets/frida-scripts/
 ├── exploit/          # webview_rce, deeplink_injection, content_provider_dump (observation only)
 ├── extract/          # crypto_keys, shared_preferences, sqlite_queries, network_requests,
 │                     # tls_version_check, data_containerization_check
-└── ios/              # nsurlsession_hook, data_protection
+└── ios/              # observation only: nsurlsession_hook, data_protection, keychain_access,
+                      # pasteboard_monitor, file_io, commoncrypto, wkwebview_load
 ```
 
 The agent selects scripts automatically based on the scan context, or you can reference them in custom instructions.
@@ -427,7 +428,7 @@ maya/
 │   ├── frameworks/      # flutter_analysis, flutter_apps, react_native_analysis, xamarin_analysis
 │   ├── targets/         # fintech_mobile_banking
 │   ├── standards/       # owasp_masvs
-│   ├── platforms/       # android_internals, ios_internals
+│   ├── platforms/       # android_internals, ios_internals, ios_testing
 │   ├── agents/          # root_orchestrator, static_analyzer, dynamic_tester
 │   ├── coordination/    # delegation_strategy, context_sharing
 │   └── scan_modes/      # quick, standard, comprehensive
@@ -440,7 +441,7 @@ companion_app/
 ├── android/             # Kotlin/Ktor companion server (16+ modules)
 └── ios/                 # Swift companion scaffold (9 commands)
 assets/
-├── frida-scripts/       # 23 pre-built Frida scripts
+├── frida-scripts/       # 28 pre-built Frida scripts
 ├── signer/              # APK/IPA signing helpers
 └── wordlists/           # deeplink-payloads.txt, sqli-payloads.txt
 docs/                    # Full documentation
@@ -459,6 +460,7 @@ Full documentation lives in [`docs/`](docs/INDEX.md):
 | Guide | Description |
 |-------|-------------|
 | [LLM Configuration](docs/llm-configuration.md) | Using any model provider with Maya |
+| [iOS support](docs/ios.md) | Device-free IPA scan and what still needs a device |
 | [Companion App](docs/companion-app.md) | Android & iOS on-device companion setup |
 | [Building & Infrastructure](docs/building-and-infrastructure.md) | Docker, sandbox, host setup |
 | [Contributing](docs/contributing.md) | How to contribute tools, skills, and improvements |

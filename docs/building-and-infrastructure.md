@@ -186,7 +186,9 @@ Maya is designed to work in reduced-capability modes:
 |-----------|----------|----------|
 | Docker | Not installed | Dry-run mode — tools log what they would execute |
 | LLM API key | Not set | Mock mode — deterministic responses for testing |
-| Device | Not connected | `maya --static-only` still reports on an APK. The agent loop keeps planning dynamic steps it cannot run. |
+| Device | Not connected | `maya --static-only` still reports on an APK, an IPA, or an `.app` bundle. The agent loop keeps planning dynamic steps it cannot run. |
+| iOS dynamic | No jailbreak and no Frida Gadget | Static IPA results stand. Maya does not jailbreak, re-sign, or decrypt. |
+| `otool` | Not installed | The IPA scan uses the built-in Mach-O parser and records that `otool` was absent. |
 | Frida server | Not running | Skips Frida-based instrumentation |
 | Companion app | Not deployed | Falls back to ADB shell commands |
 

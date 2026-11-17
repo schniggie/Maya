@@ -218,7 +218,7 @@ def test_bundled_scripts_match_the_message_convention(monkeypatch: pytest.Monkey
     monkeypatch.setattr("maya.tools.frida_scripts.Path.home", lambda: tmp_path)
     listed = list_scripts()
     assert listed["status"] == "ok"
-    assert listed["count"] == 23
+    assert listed["count"] == 28
 
     node = shutil.which("node")
     categories = {"bypass", "enumerate", "extract", "exploit", "ios"}
@@ -246,3 +246,43 @@ def test_bundled_scripts_match_the_message_convention(monkeypatch: pytest.Monkey
             script_path = bundled_root() / f"{item['name']}.js"
             completed = subprocess.run([node, "--check", str(script_path)], capture_output=True, text=True)
             assert completed.returncode == 0, completed.stderr
+
+
+IOS_OBSERVATION = (
+    "ios/keychain_access",
+    "ios/pasteboard_monitor",
+    "ios/file_io",
+    "ios/commoncrypto",
+    "ios/wkwebview_load",
+    "ios/nsurlsession_hook",
+    "ios/data_protection",
+)
+_OBSERVATION_FORBIDDEN = (
+    "Interceptor.replace",
+    "retval.replace",
+    "NativeFunction",
+    "Memory.",
+    "evaluateJavascript",
+    "javascript:",
+    "https://",
+    "http://",
+    "kSecValueData",
+    ".bytes(",
+)
+
+
+def test_ios_observation_scripts_load_through_the_catalog(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("MAYA_FRIDA_SCRIPTS", raising=False)
+    monkeypatch.setattr("maya.tools.frida_scripts.Path.home", lambda: tmp_path)
+    listed = {item["name"] for item in list_scripts()["scripts"]}
+    for name in IOS_OBSERVATION:
+        assert name in listed
+        loaded = load_script(name)
+        assert loaded["status"] == "ok"
+        assert loaded["category"] == "ios"
+        source = loaded["source"]
+        assert "ObjC.available" in source
+        assert "Interceptor.attach" in source
+        assert ".implementation =" not in source
+        for token in _OBSERVATION_FORBIDDEN:
+            assert token not in source, name

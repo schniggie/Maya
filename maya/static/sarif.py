@@ -32,7 +32,7 @@ _SLUG = re.compile(r"[^a-z0-9]+")
 def report_to_sarif(report: dict) -> dict:
     """Build a SARIF 2.1.0 document from a successful static-scan report."""
     findings = [item for item in report.get("findings") or [] if isinstance(item, dict)]
-    uri = artifact_uri(str(report.get("apk") or "app.apk"))
+    uri = artifact_uri(str(report.get("artifact") or report.get("apk") or report.get("ipa") or "app.apk"))
     rules: list[dict] = []
     rule_index: dict[str, int] = {}
     results: list[dict] = []
@@ -58,6 +58,8 @@ def report_to_sarif(report: dict) -> dict:
                 "category": str(finding.get("category") or ""),
             },
         }
+        if finding.get("masvs"):
+            result["properties"]["masvs"] = str(finding["masvs"])
         package = str(report.get("package") or "")
         if package:
             result["locations"][0]["logicalLocations"] = [

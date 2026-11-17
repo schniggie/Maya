@@ -442,12 +442,17 @@ def _assert_sarif_document(sarif: dict, report: dict) -> None:
         assert result["properties"]["severity"] == finding["severity"]
 
 
-def test_cli_static_only_requires_an_apk(tmp_path: Path) -> None:
+def test_cli_static_only_rejects_a_missing_package_and_unknown_type(tmp_path: Path) -> None:
     runner = CliRunner()
     missing = runner.invoke(cli, ["--static-only"])
     assert missing.exit_code != 0
+    notes = tmp_path / "notes.txt"
+    notes.write_text("not a package", encoding="utf-8")
+    rejected = runner.invoke(cli, ["--static-only", "--package", str(notes)])
+    assert rejected.exit_code != 0
+    assert ".apk" in rejected.output
     ipa = tmp_path / "app.ipa"
     ipa.write_bytes(b"not an ipa")
-    wrong_type = runner.invoke(cli, ["--static-only", "--package", str(ipa)])
-    assert wrong_type.exit_code != 0
-    assert "APK" in wrong_type.output
+    not_zip = runner.invoke(cli, ["--static-only", "--package", str(ipa)])
+    assert not_zip.exit_code == 2
+    assert "zip" in not_zip.output.lower()

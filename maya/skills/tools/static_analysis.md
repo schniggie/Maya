@@ -11,7 +11,7 @@ applies_to: [static, recon]
 
 ## Overview
 
-Start with `static_apk_scan`, which reads the APK directly and writes findings without apktool. Use `terminal_execute` and `file_read` afterwards for decompilation, Semgrep, and dependency audits.
+Start with `static_apk_scan` for an APK, or `static_ipa_scan` for an IPA or `.app` bundle. Both write findings without a device. Use `terminal_execute` and `file_read` afterwards for decompilation, Semgrep, and dependency audits. The IPA scan does not decrypt FairPlay and does not require `otool`.
 
 ## Step 0: Device-free APK scan
 
@@ -20,6 +20,14 @@ static_apk_scan(apk_path="<apk_path>", output_dir="/tmp/maya-static")
 ```
 
 Read `report.json` and `report.sarif` from that directory. Treat those findings as confirmed for manifest flags, network security config, embedded URLs, and native client checks. Decompile only to add file and line evidence.
+
+## Step 0b: Device-free IPA scan
+
+```
+static_ipa_scan(ipa_path="<ipa_or_app>", output_dir="/tmp/maya-static")
+```
+
+Read `report.json` and the capability notes. ATS, URL schemes, file sharing, `get-task-allow`, and Mach-O results are already scored. If `macho_status` is not `parsed`, or the binary is encrypted, say which checks were skipped.
 
 ## Step 1: Decompile
 

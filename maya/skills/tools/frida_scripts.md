@@ -2,7 +2,7 @@
 name: frida_scripts
 description: Pre-built Frida script library - when and how to use each module
 category: tools
-version: "1.2"
+version: "1.3"
 last_updated: "2026-11-17"
 applies_to: [dynamic, bypass, extract, exploit]
 ---
@@ -11,7 +11,7 @@ applies_to: [dynamic, bypass, extract, exploit]
 
 ## Overview
 
-The 23 bundled scripts live in `assets/frida-scripts/<category>/<name>.js`. The sandbox image copies them to `/opt/maya-assets/frida-scripts`. A user directory at `~/.maya/frida-scripts/` is included when it exists, and `MAYA_FRIDA_SCRIPTS` replaces that extra directory.
+The 28 bundled scripts live in `assets/frida-scripts/<category>/<name>.js`. The sandbox image copies them to `/opt/maya-assets/frida-scripts`. A user directory at `~/.maya/frida-scripts/` is included when it exists, and `MAYA_FRIDA_SCRIPTS` replaces that extra directory.
 
 1. `frida_list_scripts` returns name, category, and the first `//` description. It does not return source.
 2. `frida_run_named_script(package_name="...", name="enumerate/loaded_classes")` loads one readable script and injects it with `frida_run_script`.
@@ -83,8 +83,13 @@ These stay observation scripts for an authorized lab app. Do not treat them as r
 
 | Module | When to Use |
 | --- | --- |
-| `nsurlsession_hook` | Observe `NSURLSession` data-task URL, method, and headers. Requires `ObjC.available`. |
-| `data_protection` | Report the file-protection class on `NSFileManager` creates and `NSData` writes. |
+| `nsurlsession_hook` | Observe `NSURLSession` data-task URL, method, and headers. Requires `ObjC.available`. Does not change the request. |
+| `data_protection` | Report the file-protection class on `NSFileManager` creates and `NSData` writes. Does not read file bytes. |
+| `keychain_access` | Log SecItem class, service, account, access group, accessibility, and status. Does not copy passwords or key bytes. |
+| `pasteboard_monitor` | Log change count, UTI, and length. Does not copy pasteboard contents. |
+| `file_io` | Log NSFileManager paths, protection class, and byte length. Does not read file bytes. |
+| `commoncrypto` | Log CCCrypt operation, algorithm, options, and lengths. Does not copy key, IV, or data bytes. |
+| `wkwebview_load` | Log WKWebView URL, scheme, host, MIME type, and HTML or data length. Does not navigate. |
 
 ## Decision Flow
 
@@ -94,3 +99,4 @@ These stay observation scripts for an authorized lab app. Do not treat them as r
 4. Read `ready`, `hook`, and `miss` events before deciding the bypass installed.
 5. Add one enumerate or extract module in its own injection for the test objective.
 6. For `exploit/` names, record the observation. Do not extend those scripts into an injection or query tool during the run.
+7. For an iOS process, use the `ios/` scripts above. They observe a call the app already makes. There is no bundled iOS pinning or jailbreak-detection bypass.

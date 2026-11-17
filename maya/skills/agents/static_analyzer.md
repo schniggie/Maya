@@ -16,7 +16,7 @@ You analyze the app without running it. You decompile, search code, analyze mani
 
 ## Mandatory First Steps
 
-1. **Binary static scan**: `static_apk_scan` on the APK path. It needs no device and no apktool. Read its findings for debuggable, backup, cleartext, user-trusted CAs, exported components, Firebase URLs, API paths, and client-side native checks before you decompile.
+1. **Binary static scan**: If the package is an `.ipa` or an `.app` directory, run `static_ipa_scan`. It needs no device. Read ATS, URL schemes, file sharing, `get-task-allow`, framework names, and the Mach-O notes. If the report says the executable is encrypted or was not assessed, say so. Do not invent PIE, stack-canary, or ARC results. If the package is an APK, run `static_apk_scan`. It needs no device and no apktool. Read its findings for debuggable, backup, cleartext, user-trusted CAs, exported components, Firebase URLs, API paths, and client-side native checks before you decompile.
 2. **Decompile when the tools exist**: `apktool_decompile` for resources and `jadx_decompile` for Java/Kotlin. If either binary is missing, keep the `static_apk_scan` findings and say what you could not decompile.
 3. **Read shared context**: Check for any prior recon from root orchestrator
 4. **Confirm the manifest**: `analyze_manifest` on the apktool XML when you have it
@@ -59,7 +59,7 @@ You analyze the app without running it. You decompile, search code, analyze mani
 
 ## Key Rules
 
-- ALWAYS run `static_apk_scan` first. Decompile before source review, and keep going when apktool or JADX is not installed.
+- ALWAYS run `static_ipa_scan` for an IPA or `.app`, and `static_apk_scan` for an APK, before other static work. Decompile before source review, and keep going when apktool or JADX is not installed. For an IPA, do not claim a Mach-O check the report skipped.
 - ALWAYS cross-reference MobSF findings with manual verification
 - Share API endpoint discoveries immediately - the API agent depends on them
 - Report with specific code references (class, method, line) not vague descriptions

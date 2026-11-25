@@ -63,6 +63,25 @@ The same flags exist as environment variables:
 
 The process is started with `-no-window -no-audio -gpu swiftshader_indirect -no-boot-anim`. SwiftShader is software GLES. It does not replace CPU virtualization.
 
+### AVD directory
+
+`avdmanager` in Android cmdline-tools 22 (the copy on GitHub-hosted Ubuntu runners, `cmdline-tools/22.0`) stores AVDs in `$XDG_CONFIG_HOME/.android/avd` when `$XDG_CONFIG_HOME/.android` already exists. Those runners set `XDG_CONFIG_HOME=$HOME/.config`, so `<name>.ini` is written to `$HOME/.config/.android/avd`. The `emulator` binary does not look there. Emulator 37 searches, in order, `$ANDROID_AVD_HOME`, `$ANDROID_SDK_HOME/avd`, and `$HOME/.android/avd`. When those disagree, `emulator -avd maya` exits immediately with `Unknown AVD name [maya]` and `no file maya.ini in $HOME/.android/avd`.
+
+cmdline-tools 22 also ignores `ANDROID_AVD_HOME` unless that path is already a directory, and then uses the XDG location above. Maya creates one directory and exports `ANDROID_AVD_HOME` for create, list, boot, and teardown:
+
+1. `ANDROID_AVD_HOME`, if it is already set.
+2. Otherwise `$ANDROID_USER_HOME/avd`, if `ANDROID_USER_HOME` is set. That is the directory avdmanager uses for AVDs when the variable is set.
+3. Otherwise `$HOME/.android/avd`.
+
+The helper creates that directory (cmdline-tools ignore `ANDROID_AVD_HOME` unless it already exists) and exports `ANDROID_AVD_HOME` to the `avdmanager` and `emulator` subprocesses. `XDG_CONFIG_HOME` is not used. `scripts/emulator_up.sh` exports the same default before it starts Python. A missing SDK, emulator binary, or `adb` still prints the reason and exits 2.
+
+To keep an AVD that already lives under the XDG path, point the variable at it:
+
+```bash
+export ANDROID_AVD_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/.android/avd"
+scripts/emulator_up.sh up
+```
+
 `down` stops only `emulator-<port>`. Other adb devices are left alone.
 
 ## Dynamic smoke
@@ -117,8 +136,11 @@ The `frida-server` asset for that image is `android-arm64`, not the macOS Frida 
 The job enables KVM, installs the API 34 google_apis x86_64 image, and runs:
 
 ```bash
+export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
 maya --emulator --package dvba_v1.1.0.apk --avd-abi x86_64
 ```
+
+`ANDROID_AVD_HOME` is set so `avdmanager` and `emulator` share a directory on the runner, where `XDG_CONFIG_HOME` would otherwise split them.
 
 If `/dev/kvm` is still missing, the job skips with a notice instead of failing. That keeps a hosted runner without KVM from turning an optional weekly job red. A real smoke failure (SDK, boot, or Frida) still fails the job, and that failure does not block merges.
 

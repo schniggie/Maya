@@ -24,4 +24,18 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
   exit 2
 fi
 
+# cmdline-tools 22 writes $XDG_CONFIG_HOME/.android/avd when that directory
+# exists, and ignores ANDROID_AVD_HOME until the directory exists. The emulator
+# searches ANDROID_AVD_HOME, ANDROID_SDK_HOME/avd, then $HOME/.android/avd.
+# Create the directory and export it before create, list, boot, and teardown.
+if [[ -z "${ANDROID_AVD_HOME:-}" && -n "${HOME:-}" ]]; then
+  export ANDROID_AVD_HOME="${HOME}/.android/avd"
+fi
+if [[ -n "${ANDROID_AVD_HOME:-}" ]]; then
+  mkdir -p "$ANDROID_AVD_HOME" || {
+    echo "could not create the AVD directory ${ANDROID_AVD_HOME}" >&2
+    exit 2
+  }
+fi
+
 exec "$PYTHON" -m maya.tools.emulator "$@"

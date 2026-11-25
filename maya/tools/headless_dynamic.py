@@ -207,7 +207,7 @@ def run_headless_dynamic(
     out = Path(output_dir) if output_dir else Path("maya_runs") / package_name
     out.mkdir(parents=True, exist_ok=True)
 
-    boot = boot_emulator(config, sdk, output_dir=out)
+    boot = boot_emulator(config, sdk, output_dir=out, env=source)
     if boot.get("status") != "ok":
         boot["output_dir"] = str(out)
         _write_result(out, boot)

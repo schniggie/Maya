@@ -103,4 +103,15 @@ jobs:
           MAYA_EMULATOR_BOOT_TIMEOUT: "420"
           MAYA_EMULATOR_SMOKE_TIMEOUT: "40"
         run: |
+          set -euo pipefail
+          # cmdline-tools 22 writes $XDG_CONFIG_HOME/.android/avd when that
+          # .android directory exists (XDG_CONFIG_HOME=$HOME/.config here).
+          # emulator looks in ANDROID_AVD_HOME, ANDROID_SDK_HOME/avd, and
+          # $HOME/.android/avd, and ignores ANDROID_AVD_HOME until it exists.
+          # The Python helper creates and exports the same variable locally.
+          if [[ -z "${ANDROID_AVD_HOME:-}" ]]; then
+            export ANDROID_AVD_HOME="${HOME}/.android/avd"
+          fi
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "ANDROID_AVD_HOME=${ANDROID_AVD_HOME}"
           maya --emulator --package dvba_v1.1.0.apk --avd-api "$AVD_API" --avd-abi x86_64

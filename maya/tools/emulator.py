@@ -97,7 +97,22 @@ def _text(value: str | bytes | None) -> str:
     return value
 
 
-def run_command(argv: list[str], *, timeout: int, input_text: str | None = None) -> dict[str, Any]:
+def _subprocess_env(overrides: Mapping[str, str] | None) -> dict[str, str] | None:
+    """Merge overrides into the current environment. None inherits the parent environment."""
+    if not overrides:
+        return None
+    merged = dict(os.environ)
+    merged.update(overrides)
+    return merged
+
+
+def run_command(
+    argv: list[str],
+    *,
+    timeout: int,
+    input_text: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     """Run a command and return a dict. Missing binaries and timeouts do not raise."""
     try:
         proc = subprocess.run(
@@ -107,6 +122,7 @@ def run_command(argv: list[str], *, timeout: int, input_text: str | None = None)
             timeout=timeout,
             input=input_text,
             check=False,
+            env=_subprocess_env(env),
         )
     except subprocess.TimeoutExpired as exc:
         return {
@@ -509,7 +525,11 @@ def _log_tail(path: Path, limit: int = 2000) -> str:
     return data[-limit:].decode("utf-8", errors="replace")
 
 
-def spawn_emulator(argv: list[str], log_path: Path) -> dict[str, Any]:
+def spawn_emulator(
+    argv: list[str],
+    log_path: Path,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     """Start the emulator detached. The caller stops it with ``adb emu kill`` or the returned process."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     handle = log_path.open("ab")
@@ -520,6 +540,7 @@ def spawn_emulator(argv: list[str], log_path: Path) -> dict[str, Any]:
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
+            env=_subprocess_env(env),
         )
     except FileNotFoundError:
         return _error(f"missing binary: {argv[0] if argv else 'emulator'}", missing="emulator")
@@ -546,6 +567,69 @@ def stop_process(process: Any) -> None:
             process.kill()
 
 
+# Emulator 37.3 (the binary in the failing CI run) prints this search order:
+#   $ANDROID_AVD_HOME, $ANDROID_SDK_HOME/avd, $HOME/.android/avd
+# cmdline-tools 22.0 (the avdmanager on that runner) does not use that list.
+# AbstractAndroidLocations.computeAndroidFolder() returns
+# $XDG_CONFIG_HOME/.android when that directory already exists, and
+# getAvdLocation() is that path plus /avd. GitHub-hosted Ubuntu sets
+# XDG_CONFIG_HOME=$HOME/.config, so the ini lands in
+# $HOME/.config/.android/avd and `emulator -avd` never sees it.
+# ANDROID_AVD_HOME is the first path both tools honor, but 22.0 ignores it
+# unless the directory already exists. Create it, then export it.
+ANDROID_AVD_HOME = "ANDROID_AVD_HOME"
+ANDROID_USER_HOME = "ANDROID_USER_HOME"
+
+
+def resolve_avd_home(env: Mapping[str, str] | None = None, *, home: Path | None = None) -> Path:
+    """Directory that should contain ``<name>.ini``.
+
+    ``ANDROID_AVD_HOME`` wins. Otherwise ``$ANDROID_USER_HOME/avd`` wins, which
+    is where avdmanager writes when ``ANDROID_USER_HOME`` is set. The fallback
+    is ``$HOME/.android/avd``, the last directory the emulator searches.
+    ``XDG_CONFIG_HOME`` is ignored: the emulator binary does not search it,
+    and cmdline-tools 22 uses ``$XDG_CONFIG_HOME/.android/avd`` when that
+    ``.android`` directory already exists.
+    """
+    source = os.environ if env is None else env
+    explicit = source.get(ANDROID_AVD_HOME, "").strip()
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    user_home = source.get(ANDROID_USER_HOME, "").strip()
+    if user_home:
+        return (Path(user_home).expanduser() / "avd").resolve()
+    home_dir = Path.home() if home is None else home
+    return (home_dir / ".android" / "avd").resolve()
+
+
+def ensure_avd_home(
+    env: Mapping[str, str] | None = None,
+    *,
+    home: Path | None = None,
+) -> tuple[Path | None, dict[str, Any] | None]:
+    """Create the AVD directory. Failure is an error dict, not a traceback.
+
+    The directory has to exist before avdmanager runs. cmdline-tools ignore
+    ``ANDROID_AVD_HOME`` unless it is already a directory, and then fall back
+    to the XDG path the emulator does not search.
+    """
+    try:
+        path = resolve_avd_home(env, home=home)
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return None, _error(
+            f"could not create the AVD directory: {exc}",
+            missing="avd-home",
+        )
+    if not path.is_dir():
+        return None, _error(f"ANDROID_AVD_HOME is not a directory: {path}", missing="avd-home")
+    return path, None
+
+
+def _avd_child_env(avd_home: Path) -> dict[str, str]:
+    return {ANDROID_AVD_HOME: str(avd_home)}
+
+
 def _public_boot(config: EmulatorConfig, *, serial: str, started_by_us: bool, reused: bool, pid: int | None) -> dict:
     return {
         "status": "ok",
@@ -566,10 +650,12 @@ def boot_emulator(
     sdk: SdkLayout,
     *,
     runner: Runner | None = None,
-    spawn: Callable[[list[str], Path], dict[str, Any]] | None = None,
+    spawn: Callable[..., dict[str, Any]] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
     output_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    home: Path | None = None,
 ) -> dict[str, Any]:
     """Create the AVD if needed, boot headless, and wait for ``sys.boot_completed``."""
     run = runner or run_command
@@ -615,12 +701,17 @@ def boot_emulator(
     if sdk.root is None or not system_image_dir(sdk.root, config).is_dir():
         return missing_image_error(config, sdk.sdkmanager)
 
-    existing = run([str(sdk.avdmanager), "list", "avd"], timeout=60)
+    avd_home, avd_problem = ensure_avd_home(env, home=home)
+    if avd_problem or avd_home is None:
+        return avd_problem or _error("could not prepare the AVD directory", missing="avd-home")
+    child_env = _avd_child_env(avd_home)
+
+    existing = run([str(sdk.avdmanager), "list", "avd"], timeout=60, env=child_env)
     failed = _command_error(existing, "avdmanager list avd failed")
     if failed:
         return failed
     if config.name not in avd_names(existing.get("stdout") or ""):
-        created = run(avd_create_argv(sdk.avdmanager, config), timeout=120, input_text="no\n")
+        created = run(avd_create_argv(sdk.avdmanager, config), timeout=120, input_text="no\n", env=child_env)
         failed = _command_error(created, f"avdmanager could not create AVD {config.name}")
         if failed:
             return failed
@@ -628,7 +719,7 @@ def boot_emulator(
     log_dir = output_dir or (Path.home() / ".maya" / "emulator")
     log_path = log_dir / f"{config.name}.log"
     argv = emulator_argv(sdk.emulator, config)
-    spawned = starter(argv, log_path)
+    spawned = starter(argv, log_path, env=child_env)
     if spawned.get("status") != "ok":
         spawned.setdefault("detail", _log_tail(log_path))
         return spawned
@@ -642,11 +733,25 @@ def boot_emulator(
     sleep(1)
     if not _alive():
         stop_process(process)
+        detail = _log_tail(log_path)
+        if "Unknown AVD name" in detail:
+            return _error(
+                (
+                    f"emulator could not find AVD {config.name}. "
+                    f"ANDROID_AVD_HOME is {avd_home}. "
+                    "The emulator looks for <name>.ini in $ANDROID_AVD_HOME, "
+                    "$ANDROID_SDK_HOME/avd, and $HOME/.android/avd."
+                ),
+                missing="avd",
+                detail=detail,
+                log=str(log_path),
+                avd_home=str(avd_home),
+            )
         return _error(
             "emulator exited immediately. On Linux this usually means /dev/kvm is missing or not writable. "
             "On Apple Silicon, use an arm64-v8a system image.",
             missing="emulator",
-            detail=_log_tail(log_path),
+            detail=detail,
             log=str(log_path),
         )
 
@@ -669,21 +774,29 @@ def boot_emulator(
     )
     if ready.get("status") != "ok":
         stop_process(process)
-        run([str(sdk.adb), "-s", serial, "emu", "kill"], timeout=20)
+        run([str(sdk.adb), "-s", serial, "emu", "kill"], timeout=20, env=child_env)
         ready["detail"] = _log_tail(log_path)
         ready["log"] = str(log_path)
         return ready
     booted = _public_boot(config, serial=serial, started_by_us=True, reused=False, pid=spawned.get("pid"))
     booted["log"] = str(log_path)
+    booted["avd_home"] = str(avd_home)
     return booted
 
 
-def teardown_emulator(serial: str, adb: Path, *, runner: Runner | None = None, timeout: int = 30) -> dict[str, Any]:
+def teardown_emulator(
+    serial: str,
+    adb: Path,
+    *,
+    runner: Runner | None = None,
+    timeout: int = 30,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     """Stop one emulator serial. Other adb devices are left alone."""
     if not _SERIAL_RE.fullmatch(serial):
         return _error(f"refusing to stop unexpected serial {serial!r}")
     run = runner or run_command
-    result = run([str(adb), "-s", serial, "emu", "kill"], timeout=timeout)
+    result = run([str(adb), "-s", serial, "emu", "kill"], timeout=timeout, env=env)
     if result.get("missing_binary"):
         return _error("adb is not available; the emulator was not stopped", missing="adb")
     text = ((result.get("stdout") or "") + "\n" + (result.get("stderr") or "")).lower()
@@ -763,7 +876,7 @@ def emulator_up(
     boot_timeout: int | None = None,
     machine: str | None = None,
     runner: Runner | None = None,
-    spawn: Callable[[list[str], Path], dict[str, Any]] | None = None,
+    spawn: Callable[..., dict[str, Any]] | None = None,
     which: Which | None = None,
     home: Path | None = None,
     system_roots: Sequence[Path] | None = None,
@@ -792,6 +905,8 @@ def emulator_up(
         runner=runner,
         spawn=spawn,
         output_dir=output_dir,
+        env=env,
+        home=home,
     )
 
 
@@ -811,7 +926,11 @@ def emulator_down(
     sdk_result = find_sdk(env, which=which, home=home, system_roots=system_roots)
     if sdk_result.get("status") != "ok":
         return sdk_result
-    return teardown_emulator(config.serial(), sdk_result["sdk"].adb, runner=runner)
+    # adb emu kill stops by serial. Still pass the same AVD home so teardown
+    # sees the directory create and launch used.
+    avd_home, _avd_problem = ensure_avd_home(env, home=home)
+    child_env = _avd_child_env(avd_home) if avd_home is not None else None
+    return teardown_emulator(config.serial(), sdk_result["sdk"].adb, runner=runner, env=child_env)
 
 
 def emulator_status(
@@ -856,7 +975,7 @@ def format_result(result: dict[str, Any]) -> str:
             lines.append(str(detail))
         return "\n".join(lines)
     lines = [f"status: {result.get('status')}"]
-    for key in ("serial", "avd", "api", "abi", "image", "state", "online", "boot_completed", "reused"):
+    for key in ("serial", "avd", "avd_home", "api", "abi", "image", "state", "online", "boot_completed", "reused"):
         if key in result:
             lines.append(f"{key}: {result[key]}")
     return "\n".join(lines)

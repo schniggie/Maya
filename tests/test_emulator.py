@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import lzma
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,10 +22,15 @@ from maya.tools.emulator import (
     build_config,
     default_abi,
     emulator_argv,
+    emulator_down,
     emulator_up,
+    ensure_avd_home,
     find_sdk,
     main,
     parse_adb_devices,
+    resolve_avd_home,
+    run_command,
+    spawn_emulator,
     system_image_dir,
     wait_for_boot,
 )
@@ -290,14 +296,18 @@ def test_boot_creates_the_avd_and_starts_headless(tmp_path: Path) -> None:
     system_image_dir(root, config).mkdir(parents=True)
     spawned: dict[str, list[str]] = {}
 
-    def runner(argv, timeout, input_text=None):
+    seen_env: list[dict[str, str]] = []
+
+    def runner(argv, timeout, input_text=None, env=None):
         if argv[-1] == "start-server":
             return _ok()
         if argv[-1] == "devices":
             return _ok("List of devices attached\n")
         if argv[-2:] == ["list", "avd"]:
+            seen_env.append(dict(env or {}))
             return _ok("Available Android Virtual Devices:\n")
         if "create" in argv:
+            seen_env.append(dict(env or {}))
             assert input_text == "no\n"
             assert config.system_image() in argv
             assert config.device in argv
@@ -315,18 +325,35 @@ def test_boot_creates_the_avd_and_starts_headless(tmp_path: Path) -> None:
         def poll(self):
             return None
 
-    def spawn(argv, log_path):
+    def spawn(argv, log_path, env=None):
         spawned["argv"] = list(argv)
+        spawned["env"] = dict(env or {})
         log_path.write_text("", encoding="utf-8")
         return {"status": "ok", "pid": 4242, "process": _Alive(), "log": str(log_path)}
 
-    result = boot_emulator(config, sdk, runner=runner, spawn=spawn, sleep=lambda _seconds: None, output_dir=tmp_path)
+    result = boot_emulator(
+        config,
+        sdk,
+        runner=runner,
+        spawn=spawn,
+        sleep=lambda _seconds: None,
+        output_dir=tmp_path,
+        env={"XDG_CONFIG_HOME": str(tmp_path / "xdg")},
+        home=tmp_path / "home",
+    )
     assert result["status"] == "ok"
     assert result["started_by_us"] is True
     assert result["reused"] is False
     assert "-no-window" in spawned["argv"]
     assert "-no-audio" in spawned["argv"]
     assert spawned["argv"][spawned["argv"].index("-gpu") + 1] == "swiftshader_indirect"
+    avd_home = (tmp_path / "home" / ".android" / "avd").resolve()
+    assert result["avd_home"] == str(avd_home)
+    assert avd_home.is_dir()
+    assert seen_env
+    assert all(item["ANDROID_AVD_HOME"] == str(avd_home) for item in seen_env)
+    assert spawned["env"]["ANDROID_AVD_HOME"] == str(avd_home)
+    assert not (tmp_path / "xdg" / ".android").exists()
 
 
 def test_boot_reports_an_emulator_that_exits_immediately(tmp_path: Path) -> None:
@@ -336,10 +363,12 @@ def test_boot_reports_an_emulator_that_exits_immediately(tmp_path: Path) -> None
     assert config is not None and problem is None
     system_image_dir(root, config).mkdir(parents=True)
 
-    def runner(argv, timeout, input_text=None):
+    def runner(argv, timeout, input_text=None, env=None):
         if argv[-1] == "start-server" or argv[-1] == "devices":
             return _ok("List of devices attached\n" if argv[-1] == "devices" else "")
         if argv[-2:] == ["list", "avd"]:
+            assert env is not None
+            assert Path(env["ANDROID_AVD_HOME"]).is_dir()
             return _ok("    Name: maya\n")
         raise AssertionError(argv)
 
@@ -358,15 +387,231 @@ def test_boot_reports_an_emulator_that_exits_immediately(tmp_path: Path) -> None
         def kill(self):
             return None
 
-    def spawn(argv, log_path):
+    def spawn(argv, log_path, env=None):
         log_path.write_text("x86_64 emulation currently requires hardware acceleration\n", encoding="utf-8")
-        return {"status": "ok", "pid": 7, "process": _Dead(), "log": str(log_path)}
+        return {"status": "ok", "pid": 7, "process": _Dead(), "log": str(log_path), "env": env}
 
-    result = boot_emulator(config, sdk, runner=runner, spawn=spawn, sleep=lambda _seconds: None, output_dir=tmp_path)
+    result = boot_emulator(
+        config,
+        sdk,
+        runner=runner,
+        spawn=spawn,
+        sleep=lambda _seconds: None,
+        output_dir=tmp_path,
+        env={},
+        home=tmp_path / "home",
+    )
     assert result["status"] == "error"
     assert result["missing"] == "emulator"
     assert "hardware acceleration" in result["detail"]
     assert "/dev/kvm" in result["error"]
+
+
+def _emulator_ini_dirs(env: dict[str, str], home: Path) -> list[Path]:
+    """Search order printed by emulator 37.3: ANDROID_AVD_HOME, ANDROID_SDK_HOME/avd, HOME/.android/avd."""
+    dirs: list[Path] = []
+    explicit = env.get("ANDROID_AVD_HOME", "").strip()
+    if explicit:
+        dirs.append(Path(explicit))
+    sdk_home = env.get("ANDROID_SDK_HOME", "").strip()
+    if sdk_home:
+        dirs.append(Path(sdk_home) / "avd")
+    dirs.append(home / ".android" / "avd")
+    return dirs
+
+
+def _emulator_finds_avd(name: str, env: dict[str, str], home: Path) -> bool:
+    return any((directory / f"{name}.ini").is_file() for directory in _emulator_ini_dirs(env, home))
+
+
+def test_resolve_avd_home_ignores_xdg_and_matches_emulator_search(tmp_path: Path) -> None:
+    """The CI failure: avdmanager follows XDG_CONFIG_HOME, the emulator does not."""
+    home = tmp_path / "home"
+    xdg = tmp_path / "xdg"
+    # cmdline-tools 22 keeps using this directory once it exists.
+    (xdg / ".android").mkdir(parents=True)
+    env = {"XDG_CONFIG_HOME": str(xdg), "HOME": str(home)}
+    resolved = resolve_avd_home(env, home=home)
+    assert resolved == (home / ".android" / "avd").resolve()
+    created, problem = ensure_avd_home(env, home=home)
+    assert problem is None
+    assert created == resolved
+    assert created is not None and created.is_dir()
+
+    xdg_dir = xdg / ".android" / "avd"
+    xdg_dir.mkdir(parents=True)
+    (xdg_dir / "maya.ini").write_text("path=/xdg/maya.avd\n", encoding="utf-8")
+    # Ini only under $XDG_CONFIG_HOME/.android/avd is what CI produced, and emulator 37 cannot see it.
+    hidden = {"HOME": str(home), "XDG_CONFIG_HOME": str(xdg)}
+    assert not _emulator_finds_avd("maya", hidden, home)
+
+    (created / "maya.ini").write_text("path=/home/maya.avd\n", encoding="utf-8")
+    visible = {"ANDROID_AVD_HOME": str(created), "HOME": str(home), "XDG_CONFIG_HOME": str(xdg)}
+    assert _emulator_finds_avd("maya", visible, home)
+    # The fallback directory is also on the emulator's default search path.
+    assert _emulator_finds_avd("maya", {"HOME": str(home)}, home)
+
+
+def test_resolve_avd_home_honors_explicit_override_and_user_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom = tmp_path / "custom"
+    user = tmp_path / "user-android"
+    xdg = str(tmp_path / "xdg")
+    explicit = resolve_avd_home(
+        {"ANDROID_AVD_HOME": str(custom), "ANDROID_USER_HOME": str(user), "XDG_CONFIG_HOME": xdg},
+        home=tmp_path / "home",
+    )
+    assert explicit == custom.resolve()
+    from_user = resolve_avd_home(
+        {"ANDROID_USER_HOME": str(user), "XDG_CONFIG_HOME": xdg},
+        home=tmp_path / "home",
+    )
+    assert from_user == (user / "avd").resolve()
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    expanded = resolve_avd_home({"ANDROID_AVD_HOME": "~/avds"}, home=tmp_path / "ignored")
+    assert expanded == (tmp_path / "avds").resolve()
+
+
+def test_boot_reports_an_unusable_avd_home_without_raising(tmp_path: Path) -> None:
+    root = tmp_path / "sdk"
+    sdk = _sdk(root)
+    config, problem = build_config({}, abi="x86_64", machine="x86_64")
+    assert config is not None and problem is None
+    system_image_dir(root, config).mkdir(parents=True)
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("x", encoding="utf-8")
+
+    def runner(argv, timeout, input_text=None, env=None):
+        if argv[-1] == "start-server":
+            return _ok()
+        if argv[-1] == "devices":
+            return _ok("List of devices attached\n")
+        raise AssertionError(argv)
+
+    result = boot_emulator(
+        config,
+        sdk,
+        runner=runner,
+        spawn=lambda *_args, **_kwargs: pytest.fail("spawned"),
+        env={"ANDROID_AVD_HOME": str(blocker)},
+        home=tmp_path / "home",
+    )
+    assert result["status"] == "error"
+    assert result["missing"] == "avd-home"
+    assert "not-a-directory" in result["error"]
+
+
+def test_unknown_avd_log_is_not_reported_as_missing_kvm(tmp_path: Path) -> None:
+    root = tmp_path / "sdk"
+    sdk = _sdk(root)
+    config, problem = build_config({}, abi="x86_64", machine="x86_64")
+    assert config is not None and problem is None
+    system_image_dir(root, config).mkdir(parents=True)
+
+    def runner(argv, timeout, input_text=None, env=None):
+        if argv[-1] == "start-server" or argv[-1] == "devices":
+            return _ok("List of devices attached\n" if argv[-1] == "devices" else "")
+        if argv[-2:] == ["list", "avd"]:
+            return _ok("    Name: maya\n")
+        raise AssertionError(argv)
+
+    class _Dead:
+        pid = 9
+
+        def poll(self):
+            return 1
+
+        def wait(self, timeout=None):
+            return 1
+
+        def terminate(self):
+            return None
+
+        def kill(self):
+            return None
+
+    def spawn(argv, log_path, env=None):
+        log_path.write_text(
+            "ERROR        | Unknown AVD name [maya], use -list-avds to see valid list.\n"
+            "ERROR        | HOME is defined but there is no file maya.ini in $HOME/.android/avd\n",
+            encoding="utf-8",
+        )
+        return {"status": "ok", "pid": 9, "process": _Dead(), "log": str(log_path)}
+
+    result = boot_emulator(
+        config,
+        sdk,
+        runner=runner,
+        spawn=spawn,
+        sleep=lambda _seconds: None,
+        output_dir=tmp_path,
+        env={},
+        home=tmp_path / "home",
+    )
+    assert result["status"] == "error"
+    assert result["missing"] == "avd"
+    assert "ANDROID_AVD_HOME" in result["error"]
+    assert "/dev/kvm" not in result["error"]
+
+
+def test_subprocess_env_reaches_avd_commands(tmp_path: Path) -> None:
+    avd_home = tmp_path / "avd"
+    script = tmp_path / "print_avd_home.py"
+    script.write_text(
+        "import os\nprint(os.environ.get('ANDROID_AVD_HOME', ''))\n",
+        encoding="utf-8",
+    )
+    listed = run_command(
+        [sys.executable, str(script)],
+        timeout=20,
+        env={"ANDROID_AVD_HOME": str(avd_home)},
+    )
+    assert listed["exit_code"] == 0
+    assert listed["stdout"].strip() == str(avd_home)
+
+    log_path = tmp_path / "emulator.log"
+    spawned = spawn_emulator(
+        [sys.executable, str(script)],
+        log_path,
+        env={"ANDROID_AVD_HOME": str(avd_home)},
+    )
+    process = spawned["process"]
+    process.wait(timeout=20)
+    assert log_path.read_text(encoding="utf-8").strip() == str(avd_home)
+
+
+def test_emulator_down_uses_the_same_avd_home(tmp_path: Path) -> None:
+    root = tmp_path / "sdk"
+    layout = _sdk(root)
+    tools = {
+        "emulator": str(layout.emulator),
+        "adb": str(layout.adb),
+        "avdmanager": str(layout.avdmanager),
+        "sdkmanager": str(layout.sdkmanager),
+    }
+    seen: dict[str, object] = {}
+
+    def runner(argv, timeout, input_text=None, env=None):
+        seen["argv"] = list(argv)
+        seen["env"] = dict(env or {})
+        return _ok()
+
+    result = emulator_down(
+        env={"XDG_CONFIG_HOME": str(tmp_path / "xdg")},
+        home=tmp_path / "home",
+        which=tools.get,
+        runner=runner,
+        system_roots=(),
+        port=5554,
+        name="maya",
+    )
+    assert result["status"] == "ok"
+    avd_home = (tmp_path / "home" / ".android" / "avd").resolve()
+    assert seen["env"]["ANDROID_AVD_HOME"] == str(avd_home)
+    assert avd_home.is_dir()
+    assert seen["argv"][-2:] == ["emu", "kill"]
 
 
 def test_emulator_up_returns_sdk_error_without_raising(monkeypatch: pytest.MonkeyPatch) -> None:
